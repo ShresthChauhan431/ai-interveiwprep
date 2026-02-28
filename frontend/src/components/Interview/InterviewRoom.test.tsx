@@ -11,7 +11,7 @@ import { InterviewDTO, InterviewQuestion } from '../../types';
 const mockNavigate = jest.fn();
 
 jest.mock('react-router-dom', () => {
-    const actual = jest.requireActual('react-router-dom/dist/main');
+    const actual = jest.requireActual('react-router-dom');
     return {
         ...actual,
         useNavigate: () => mockNavigate,

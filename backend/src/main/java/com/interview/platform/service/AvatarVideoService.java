@@ -23,35 +23,38 @@ import java.util.concurrent.CompletableFuture;
  *
  * <h3>Pipeline:</h3>
  * <ol>
- *   <li>Convert question text to speech audio via {@link TextToSpeechService} (ElevenLabs)</li>
- *   <li>Submit a "talk" job to D-ID with the audio URL and avatar image</li>
- *   <li>Poll D-ID until the video is ready</li>
- *   <li>Download the video and upload to S3</li>
+ * <li>Convert question text to speech audio via {@link TextToSpeechService}
+ * (ElevenLabs)</li>
+ * <li>Submit a "talk" job to D-ID with the audio URL and avatar image</li>
+ * <li>Poll D-ID until the video is ready</li>
+ * <li>Download the video and upload to S3</li>
  * </ol>
  *
  * <h3>P1 Changes:</h3>
  * <ul>
- *   <li><strong>Resilience4j:</strong> The manual retry loops for the D-ID
- *       {@code createTalk} API call have been replaced with programmatic
- *       Resilience4j {@link Retry} and {@link CircuitBreaker} decorators.
- *       This provides exponential backoff, circuit breaker protection against
- *       sustained D-ID outages, and observable metrics via the actuator.</li>
- *   <li><strong>S3 key storage:</strong> Upload methods now return S3 object
- *       keys instead of presigned GET URLs. Presigned URLs are generated
- *       on-demand when building DTOs for the frontend.</li>
- *   <li><strong>SLF4J logging:</strong> Migrated from {@code java.util.logging}
- *       to SLF4J for structured, consistent logging across the application.</li>
- *   <li><strong>Polling loops unchanged:</strong> The D-ID poll loop is NOT
- *       wrapped with Resilience4j retry because polling is checking async job
- *       status, not retrying a failed operation. The poll loop has its own
- *       timeout (MAX_POLL_RETRIES * POLL_INTERVAL_MS).</li>
+ * <li><strong>Resilience4j:</strong> The manual retry loops for the D-ID
+ * {@code createTalk} API call have been replaced with programmatic
+ * Resilience4j {@link Retry} and {@link CircuitBreaker} decorators.
+ * This provides exponential backoff, circuit breaker protection against
+ * sustained D-ID outages, and observable metrics via the actuator.</li>
+ * <li><strong>S3 key storage:</strong> Upload methods now return S3 object
+ * keys instead of presigned GET URLs. Presigned URLs are generated
+ * on-demand when building DTOs for the frontend.</li>
+ * <li><strong>SLF4J logging:</strong> Migrated from {@code java.util.logging}
+ * to SLF4J for structured, consistent logging across the application.</li>
+ * <li><strong>Polling loops unchanged:</strong> The D-ID poll loop is NOT
+ * wrapped with Resilience4j retry because polling is checking async job
+ * status, not retrying a failed operation. The poll loop has its own
+ * timeout (MAX_POLL_RETRIES * POLL_INTERVAL_MS).</li>
  * </ul>
  *
  * <h3>Thread Model:</h3>
- * <p>The {@link #generateAvatarVideoAsync} method runs on a virtual thread
+ * <p>
+ * The {@link #generateAvatarVideoAsync} method runs on a virtual thread
  * via {@code @Async("avatarTaskExecutor")}. The blocking {@code Thread.sleep()}
  * calls in the polling loop yield the virtual thread's carrier thread back to
- * the pool, so thousands of concurrent polls do not exhaust platform threads.</p>
+ * the pool, so thousands of concurrent polls do not exhaust platform threads.
+ * </p>
  *
  * @see TextToSpeechService
  * @see VideoStorageService
@@ -92,11 +95,11 @@ public class AvatarVideoService {
     private String avatarImageUrl;
 
     public AvatarVideoService(RestTemplate restTemplate,
-                              TextToSpeechService textToSpeechService,
-                              VideoStorageService videoStorageService,
-                              ObjectMapper objectMapper,
-                              @Qualifier("didRetry") Retry didRetry,
-                              @Qualifier("didCircuitBreaker") CircuitBreaker didCircuitBreaker) {
+            TextToSpeechService textToSpeechService,
+            VideoStorageService videoStorageService,
+            ObjectMapper objectMapper,
+            @Qualifier("didRetry") Retry didRetry,
+            @Qualifier("didCircuitBreaker") CircuitBreaker didCircuitBreaker) {
         this.restTemplate = restTemplate;
         this.textToSpeechService = textToSpeechService;
         this.videoStorageService = videoStorageService;
@@ -112,7 +115,9 @@ public class AvatarVideoService {
     /**
      * Generate an AI avatar video for a question (synchronous).
      *
-     * <p>Full pipeline: TTS → D-ID createTalk → poll → download → S3 upload.</p>
+     * <p>
+     * Full pipeline: TTS → D-ID createTalk → poll → download → S3 upload.
+     * </p>
      *
      * @param questionText the interview question text
      * @param questionId   unique identifier for S3 key naming
@@ -128,7 +133,8 @@ public class AvatarVideoService {
 
         // Step 2: Generate a presigned GET URL for the audio so D-ID can access it.
         // D-ID needs a publicly accessible URL, not an S3 key.
-        // We generate a presigned URL with 30-minute validity (enough for D-ID to process).
+        // We generate a presigned URL with 30-minute validity (enough for D-ID to
+        // process).
         String audioUrl = videoStorageService.generatePresignedGetUrl(audioS3Key, 30);
         log.debug("Generated presigned audio URL for D-ID: question={}", questionId);
 
@@ -150,9 +156,11 @@ public class AvatarVideoService {
     /**
      * Async version of {@link #generateAvatarVideo} for non-blocking operation.
      *
-     * <p>Runs on a virtual thread via the {@code avatarTaskExecutor}.
+     * <p>
+     * Runs on a virtual thread via the {@code avatarTaskExecutor}.
      * The returned {@link CompletableFuture} completes with the S3 key
-     * on success, or completes exceptionally on failure.</p>
+     * on success, or completes exceptionally on failure.
+     * </p>
      *
      * @param questionText the interview question text
      * @param questionId   unique identifier for S3 key naming
@@ -179,26 +187,37 @@ public class AvatarVideoService {
     /**
      * Call D-ID /talks endpoint with Resilience4j retry and circuit breaker.
      *
-     * <p>Replaces the previous manual retry loop. The retry config is defined
-     * in {@link com.interview.platform.config.ResilienceConfig} with:</p>
+     * <p>
+     * Replaces the previous manual retry loop. The retry config is defined
+     * in {@link com.interview.platform.config.ResilienceConfig} with:
+     * </p>
      * <ul>
-     *   <li>Exponential backoff (1s → 2s → 4s)</li>
-     *   <li>Max 3 attempts</li>
-     *   <li>Retries on 5xx, 429, and network errors only</li>
+     * <li>Exponential backoff (1s → 2s → 4s)</li>
+     * <li>Max 3 attempts</li>
+     * <li>Retries on 5xx, 429, and network errors only</li>
      * </ul>
      *
-     * <p>The circuit breaker tracks the failure rate of D-ID API calls.
+     * <p>
+     * The circuit breaker tracks the failure rate of D-ID API calls.
      * If the failure rate exceeds the threshold (default 50% over 10 calls),
      * the circuit opens and subsequent calls fail fast with
      * {@code CallNotPermittedException} for 60 seconds. This prevents
      * hammering a degraded D-ID service and allows faster fallback to
-     * text-only questions.</p>
+     * text-only questions.
+     * </p>
      *
      * @param audioUrl the presigned URL of the speech audio file
      * @return the D-ID talk ID
      * @throws RuntimeException if all retries are exhausted or circuit is open
      */
     private String createTalkWithResilience(String audioUrl) {
+        // --- MOCK API FALLBACK ---
+        if (apiKey != null && apiKey.startsWith("mock")) {
+            log.info("Mock D-ID API key detected. Returning dummy talk ID.");
+            return "mock-talk-id-" + System.currentTimeMillis();
+        }
+        // -------------------------
+
         return Decorators.ofSupplier(() -> callCreateTalk(audioUrl))
                 .withRetry(didRetry)
                 .withCircuitBreaker(didCircuitBreaker)
@@ -209,9 +228,11 @@ public class AvatarVideoService {
     /**
      * Make the actual HTTP POST to D-ID /talks endpoint.
      *
-     * <p>This method is the "raw" API call without any retry or circuit breaker
+     * <p>
+     * This method is the "raw" API call without any retry or circuit breaker
      * logic. It is wrapped by {@link #createTalkWithResilience} which handles
-     * resilience concerns.</p>
+     * resilience concerns.
+     * </p>
      *
      * @param audioUrl the URL of the speech audio file (presigned S3 URL)
      * @return the talk ID from D-ID's response
@@ -269,26 +290,39 @@ public class AvatarVideoService {
     /**
      * Poll D-ID /talks/{talkId} endpoint until the video is ready.
      *
-     * <p><strong>This is NOT wrapped with Resilience4j retry.</strong>
+     * <p>
+     * <strong>This is NOT wrapped with Resilience4j retry.</strong>
      * Polling for async job completion is fundamentally different from
      * retrying a failed API call. A "created" or "started" status is
      * not a failure — it means the job is still processing. Wrapping
      * this with Retry would incorrectly treat "not ready yet" as a
-     * failure and exhaust retry attempts.</p>
+     * failure and exhaust retry attempts.
+     * </p>
      *
-     * <p>The polling loop has its own timeout:
-     * {@code MAX_POLL_RETRIES * POLL_INTERVAL_MS = 60 * 3000ms = 3 minutes}.</p>
+     * <p>
+     * The polling loop has its own timeout:
+     * {@code MAX_POLL_RETRIES * POLL_INTERVAL_MS = 60 * 3000ms = 3 minutes}.
+     * </p>
      *
-     * <p>Individual poll HTTP requests are lightweight GET calls. If a single
+     * <p>
+     * Individual poll HTTP requests are lightweight GET calls. If a single
      * poll request fails with a transient error, the loop simply continues
      * to the next iteration (with a sleep interval in between), effectively
-     * providing implicit retry behavior.</p>
+     * providing implicit retry behavior.
+     * </p>
      *
      * @param talkId the D-ID talk ID to check
      * @return the result_url of the completed video
      * @throws RuntimeException if the video generation fails or times out
      */
     private String pollForVideoCompletion(String talkId) {
+        // --- MOCK API FALLBACK ---
+        if (apiKey != null && apiKey.startsWith("mock") && talkId.startsWith("mock-talk-id")) {
+            log.info("Mock D-ID API key detected. Simulating immediate video completion.");
+            return "https://mock-did-result-url.com/dummy.mp4";
+        }
+        // -------------------------
+
         String url = apiBaseUrl + "/talks/" + talkId;
         HttpHeaders headers = buildDIDHeaders();
         HttpEntity<Void> entity = new HttpEntity<>(headers);
@@ -354,8 +388,10 @@ public class AvatarVideoService {
     /**
      * Download the video from D-ID result URL and upload to S3.
      *
-     * <p>The D-ID result URL is a temporary URL that expires. We download
-     * the video bytes and upload them to our S3 bucket for permanent storage.</p>
+     * <p>
+     * The D-ID result URL is a temporary URL that expires. We download
+     * the video bytes and upload them to our S3 bucket for permanent storage.
+     * </p>
      *
      * @param videoUrl   the D-ID result URL (temporary, provided by D-ID)
      * @param questionId the question ID for S3 key naming
@@ -363,14 +399,56 @@ public class AvatarVideoService {
      */
     private String downloadAndUploadToS3(String videoUrl, Long questionId) {
         try {
-            // Download video bytes from D-ID
-            ResponseEntity<byte[]> response = restTemplate.exchange(
-                    videoUrl, HttpMethod.GET, null, byte[].class);
+            byte[] videoData;
+            // --- MOCK API FALLBACK ---
+            if (apiKey != null && apiKey.startsWith("mock") && videoUrl.contains("mock-did-result-url")) {
+                log.info("Mock D-ID API key detected. Simulating downloaded dummy video payload.");
+                // A real minimal valid MP4 (ftyp + moov + mdat) that browsers
+                // and ReactPlayer can actually decode and fire onEnded for.
+                // Generated from a 1-frame silent 1×1 px H.264 MP4.
+                String dummyMp4Base64 =
+                    "AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAAIZnJlZQAAAo9tZGF0AAACrgYF" +
+                    "//+q3EXpvebZSLeWLNgg2SPu73gyNjQgLSBjb3JlIDE1MiByMjg1NCBlOWE1OTAzIC0g" +
+                    "SC4yNjQvTVBFRy00IEFWQyBjb2RlYyAtIENvcHlsZWZ0IDIwMDMtMjAxNyAtIGh0dHA6" +
+                    "Ly93d3cudmlkZW9sYW4ub3JnL3gyNjQuaHRtbCAtIG9wdGlvbnM6IGNhYmFjPTEgcmVm" +
+                    "PTMgZGVibG9jaz0xOjA6MCBhbmFseXNlPTB4MzoweDExMyBtZT1oZXggc3VibWU9NyBw" +
+                    "c3k9MSBwc3lfcmQ9MS4wMDowLjAwIG1peGVkX3JlZj0xIG1lX3JhbmdlPTE2IGNocm9t" +
+                    "YV9tZT0xIHRyZWxsaXM9MSA4eDhkY3Q9MSBjcW09MCBkZWFkem9uZT0yMSwxMSBmYXN0" +
+                    "X3Bza2lwPTEgY2hyb21hX3FwX29mZnNldD0tMiB0aHJlYWRzPTMgbG9va2FoZWFkX3Ro" +
+                    "cmVhZHM9MSBzbGljZWRfdGhyZWFkcz0wIG5yPTAgZGVjaW1hdGU9MSBpbnRlcmxhY2Vk" +
+                    "PTAgYmx1cmF5X2NvbXBhdD0wIGNvbnN0cmFpbmVkX2ludHJhPTAgYmZyYW1lcz0zIGJf" +
+                    "cHlyYW1pZD0yIGJfYWRhcHQ9MSBiX2JpYXM9MCBkaXJlY3Q9MSB3ZWlnaHRiPTEgb3Bl" +
+                    "bl9nb3A9MCB3ZWlnaHRwPTIga2V5aW50PTI1MCBrZXlpbnRfbWluPTI1IHNjZW5lY3V0" +
+                    "PTQwIGludHJhX3JlZnJlc2g9MCByY19sb29rYWhlYWQ9NDAgcmM9Y3JmIG1idHJlZT0x" +
+                    "IGNyZj0yMy4wIHFjb21wPTAuNjAgcXBtaW49MCBxcG1heD02OSBxcHN0ZXA9NCBpcF9y" +
+                    "YXRpbz0xLjQwIGFxPTE6MS4wMACAAAAAD2WIhAA3//728P4FNjuZQAAAwAAAAwEH/BXu" +
+                    "AAAAAAAAABgAAAAMAAAABgAAAAwAAAAgAAAADAAAABgAAAAMAAAABmluZnIAAAA0bWluZgAA" +
+                    "ABQAAAARAAAA/////wAAAAF2bWhkAAAAAAAAAAAAAAAAAAAAA+gAAAPoAAEAAAEAAAAAAAAA" +
+                    "AAAAAQAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAA8AAAAEdHJh" +
+                    "awAAAFx0a2hkAAAAAwAAAAAAAAAAAAAAAAABAAAAAAAAA+gAAAAAAAAAAAAAAAAAAAABAAAA" +
+                    "AAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAMAAAAA2bWRpYQAAACBtZGhkAAAAAAAAAAAAAAAA" +
+                    "AAAyAAAAAAAAVcQAAAAAACdoZGxyAAAAAAAAAAB2aWRlAAAAAAAAAAAAAAAAVmlkZW9IYW5k" +
+                    "bGVyAAAAAfVtaW5mAAAAFHZtaGQAAAABAAAAAAAAAAAAAAAkZGluZgAAABxkcmVmAAAAAAAA" +
+                    "AAEAAAAMdXJsIAAAAQAAAFhzdGJsAAAAuHN0c2QAAAAAAAAAAQAAAKhhdmMxAAAAAAAAAAEA" +
+                    "AAAAAAAAAAAAAAAAAAAAAQABABIAAABIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+                    "AAAAAAAAAAAAAAAAAAAAGP//AAAANmF2Y0MBTUAf/+EAGGdNQB+wyA/gIBgAAAMAAQAAAwAy" +
+                    "DxYtlgEABWjuUCwmXAAAABhzdHRzAAAAAAAAAAEAAAABAAAAHAAAABRzdHNzAAAAAAAAAAEA" +
+                    "AAABAAAAHHN0c2MAAAAAAAAAAQAAAAEAAAABAAAAARAAAAkAAAAUc3RzegAAAAAAAAAAAAAA" +
+                    "AQAAAB0AAAAUc3RjbwAAAAAAAAABAAAAMAAAAGJ1ZHRhAAAAWm1ldGEAAAAAAAAAIWhkbHIA" +
+                    "AAAAAAAAAG1kaXJhcHBsAAAAAAAAAAAAAAAALWlsc3QAAAAlqXRvbwAAAB1kYXRhAAAAAAAA" +
+                    "AQAAAAtIYW5kQnJha2U=";
+                videoData = java.util.Base64.getDecoder().decode(dummyMp4Base64);
+            } else {
+                // Download video bytes from D-ID
+                ResponseEntity<byte[]> response = restTemplate.exchange(
+                        videoUrl, HttpMethod.GET, null, byte[].class);
 
-            byte[] videoData = response.getBody();
-            if (videoData == null || videoData.length == 0) {
-                throw new RuntimeException("Empty video downloaded from D-ID");
+                videoData = response.getBody();
+                if (videoData == null || videoData.length == 0) {
+                    throw new RuntimeException("Empty video downloaded from D-ID");
+                }
             }
+            // -------------------------
 
             log.info("Downloaded avatar video: {} bytes for question {}", videoData.length, questionId);
 
@@ -400,8 +478,10 @@ public class AvatarVideoService {
     /**
      * Build HTTP headers for D-ID API requests.
      *
-     * <p>D-ID uses Basic authentication with the API key as the username
-     * and an empty password.</p>
+     * <p>
+     * D-ID uses Basic authentication with the API key as the username
+     * and an empty password.
+     * </p>
      *
      * @return configured HttpHeaders
      */
@@ -416,8 +496,10 @@ public class AvatarVideoService {
     /**
      * Sleep helper that handles InterruptedException correctly.
      *
-     * <p>On virtual threads, {@code Thread.sleep()} yields the carrier thread
-     * back to the pool, making this efficient for concurrent polling operations.</p>
+     * <p>
+     * On virtual threads, {@code Thread.sleep()} yields the carrier thread
+     * back to the pool, making this efficient for concurrent polling operations.
+     * </p>
      *
      * @param millis milliseconds to sleep
      * @throws RuntimeException if the thread is interrupted

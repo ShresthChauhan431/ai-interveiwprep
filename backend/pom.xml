@@ -17,21 +17,14 @@
 		<java.version>21</java.version>
 		<spring-cloud.version>2023.0.0</spring-cloud.version>
 		<maven-compiler-plugin.version>3.13.0</maven-compiler-plugin.version>
-		<aws-sdk-v2.version>2.25.16</aws-sdk-v2.version>
+
 		<resilience4j.version>2.2.0</resilience4j.version>
 		<bucket4j.version>8.10.1</bucket4j.version>
 	</properties>
 
 	<dependencyManagement>
 		<dependencies>
-			<!-- AWS SDK v2 BOM — manages all software.amazon.awssdk artifact versions -->
-			<dependency>
-				<groupId>software.amazon.awssdk</groupId>
-				<artifactId>bom</artifactId>
-				<version>${aws-sdk-v2.version}</version>
-				<type>pom</type>
-				<scope>import</scope>
-			</dependency>
+
 		</dependencies>
 	</dependencyManagement>
 
@@ -74,22 +67,7 @@
 			<artifactId>flyway-mysql</artifactId>
 		</dependency>
 
-		<!-- ─── AWS SDK v2 ────────────────────────────────────────── -->
-		<!-- S3 client for object storage operations -->
-		<dependency>
-			<groupId>software.amazon.awssdk</groupId>
-			<artifactId>s3</artifactId>
-		</dependency>
-		<!-- S3 presigner for generating presigned PUT/GET URLs -->
-		<dependency>
-			<groupId>software.amazon.awssdk</groupId>
-			<artifactId>s3-transfer-manager</artifactId>
-		</dependency>
-		<!-- STS for IAM role-based auth (AssumeRole, etc.) -->
-		<dependency>
-			<groupId>software.amazon.awssdk</groupId>
-			<artifactId>sts</artifactId>
-		</dependency>
+
 
 		<!-- ─── JWT Authentication ────────────────────────────────── -->
 		<dependency>

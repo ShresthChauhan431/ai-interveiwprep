@@ -167,7 +167,16 @@ public class TextToSpeechService {
         log.info("TTS cache MISS for question {}: textLength={} chars", questionId, text.length());
 
         // Call ElevenLabs with Resilience4j retry + circuit breaker
-        byte[] audioData = callElevenLabsWithResilience(text);
+        byte[] audioData;
+
+        // --- MOCK API FALLBACK ---
+        if (apiKey != null && apiKey.startsWith("mock")) {
+            log.info("Mock ElevenLabs API key detected. Returning empty byte array.");
+            audioData = new byte[] { 0 }; // tiny dummy payload
+        } else {
+            audioData = callElevenLabsWithResilience(text);
+        }
+        // -------------------------
 
         // Upload to S3 — returns S3 key (not a presigned URL)
         String timestamp = String.valueOf(Instant.now().toEpochMilli());

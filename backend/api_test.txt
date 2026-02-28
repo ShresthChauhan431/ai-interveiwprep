@@ -1,0 +1,8 @@
+--- OPENAI ---
+200
+--- ELEVENLABS ---
+200
+--- D-ID ---
+200
+--- ASSEMBLYAI ---
+200

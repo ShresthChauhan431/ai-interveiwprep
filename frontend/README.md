@@ -18,7 +18,7 @@ npm install
 npm start
 ```
 
-The app runs at [http://localhost:3000](http://localhost:3000).
+The app runs at [http://localhost:3000](http://localhost:3002).
 
 ## Environment Variables
 

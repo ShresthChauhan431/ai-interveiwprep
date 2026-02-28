@@ -10,7 +10,6 @@ import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequestMapping("/api/resumes")
-@CrossOrigin(origins = "http://localhost:3000")
 public class ResumeController {
 
     private final ResumeService resumeService;
@@ -27,7 +26,6 @@ public class ResumeController {
         ResumeResponse response = resumeService.uploadResume(file, userId);
         return new ResponseEntity<>(response, HttpStatus.CREATED);
     }
-
 
     @GetMapping("/my-resume")
     public ResponseEntity<ResumeResponse> getMyResume(HttpServletRequest request) {

@@ -3,80 +3,44 @@ package com.interview.platform.service;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
-import software.amazon.awssdk.core.sync.RequestBody;
-import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.model.*;
-import software.amazon.awssdk.services.s3.presigner.S3Presigner;
-import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
-import software.amazon.awssdk.services.s3.presigner.model.PresignedGetObjectRequest;
-import software.amazon.awssdk.services.s3.presigner.model.PresignedPutObjectRequest;
-import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
 
 import java.io.IOException;
-import java.time.Duration;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.time.Instant;
-import java.util.Map;
 
 /**
- * Service for S3 object storage operations using AWS SDK v2.
+ * Service for file storage operations using local filesystem.
  *
- * <h3>P1 Changes from SDK v1:</h3>
- * <ul>
- *   <li>Migrated from {@code AmazonS3} (SDK v1) to {@code S3Client} (SDK v2).</li>
- *   <li>Upload methods now return <strong>S3 object keys</strong> instead of
- *       presigned GET URLs. This eliminates the expiry problem where URLs stored
- *       in the database would become invalid after 7 days.</li>
- *   <li>Presigned GET and PUT URL generation is now handled via {@code S3Presigner}
- *       with configurable durations.</li>
- *   <li>Logging migrated from {@code java.util.logging} to SLF4J.</li>
- * </ul>
+ * <p>
+ * Replaces the previous S3-based implementation. Files are stored under
+ * a configurable root directory (default: {@code ./uploads}). URLs returned
+ * by presigned URL methods point to {@code /api/files/**} endpoints served
+ * by {@code FileController}.
+ * </p>
  *
  * <h3>Key Storage Strategy:</h3>
- * <p>All entity fields that previously stored presigned URLs ({@code avatarVideoUrl},
- * {@code videoUrl}, {@code fileUrl}) now store S3 object keys. Presigned GET URLs
- * are generated on-demand when building DTOs for the frontend. This means stored
- * references never expire.</p>
- *
- * <h3>Presigned PUT Flow (P1 — direct-to-S3 uploads):</h3>
- * <ol>
- *   <li>Frontend requests a presigned PUT URL via {@code /api/interviews/{id}/upload-url}</li>
- *   <li>This service generates the presigned PUT URL and returns it with the S3 key</li>
- *   <li>Frontend uploads directly to S3 using HTTP PUT</li>
- *   <li>Frontend calls {@code /confirm-upload} — this service verifies the object exists</li>
- * </ol>
+ * <p>
+ * All entity fields that store file references use relative storage keys
+ * (e.g., {@code interviews/1/100/response_200_12345.webm}). These keys are
+ * resolved to HTTP URLs on-demand when building DTOs for the frontend.
+ * </p>
  */
 @Service
 public class VideoStorageService {
 
     private static final Logger log = LoggerFactory.getLogger(VideoStorageService.class);
 
-    private final S3Client s3Client;
-    private final S3Presigner s3Presigner;
-    private final String bucketName;
+    private final String storageRootPath;
+    private final String appBaseUrl;
 
-    /**
-     * Duration for presigned GET URLs (video/audio playback, resume download).
-     * Default: 1 hour. Configurable via {@code aws.s3.presigned.get.duration-minutes}.
-     */
-    @Value("${aws.s3.presigned.get.duration-minutes:60}")
-    private int presignedGetDurationMinutes;
-
-    /**
-     * Duration for presigned PUT URLs (frontend direct upload).
-     * Default: 15 minutes. Configurable via {@code aws.s3.presigned.put.duration-minutes}.
-     */
-    @Value("${aws.s3.presigned.put.duration-minutes:15}")
-    private int presignedPutDurationMinutes;
-
-    public VideoStorageService(S3Client s3Client,
-                               S3Presigner s3Presigner,
-                               @Qualifier("s3BucketName") String bucketName) {
-        this.s3Client = s3Client;
-        this.s3Presigner = s3Presigner;
-        this.bucketName = bucketName;
+    public VideoStorageService(@Qualifier("storageRootPath") String storageRootPath,
+            @Qualifier("appBaseUrl") String appBaseUrl) {
+        this.storageRootPath = storageRootPath;
+        this.appBaseUrl = appBaseUrl;
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -84,18 +48,13 @@ public class VideoStorageService {
     // ════════════════════════════════════════════════════════════════
 
     /**
-     * Upload a video response to S3 via the server (legacy path).
-     *
-     * <p>This method is retained for backward compatibility but the preferred
-     * path for user video uploads is presigned PUT (see {@link #generatePresignedPutUrl}).
-     * It is still used internally when the server needs to upload content
-     * (e.g., avatar videos downloaded from D-ID).</p>
+     * Upload a video response to local storage.
      *
      * @param file        the video file
-     * @param userId      owner user ID (used in S3 key path)
-     * @param interviewId interview ID (used in S3 key path)
-     * @param questionId  question ID (used in S3 key path)
-     * @return the S3 object key (NOT a presigned URL)
+     * @param userId      owner user ID (used in key path)
+     * @param interviewId interview ID (used in key path)
+     * @param questionId  question ID (used in key path)
+     * @return the storage key (NOT a URL)
      */
     public String uploadVideo(MultipartFile file, Long userId, Long interviewId, Long questionId) {
         String timestamp = String.valueOf(Instant.now().toEpochMilli());
@@ -103,38 +62,23 @@ public class VideoStorageService {
                 userId, interviewId, questionId, timestamp);
 
         try {
-            PutObjectRequest putRequest = PutObjectRequest.builder()
-                    .bucket(bucketName)
-                    .key(key)
-                    .contentType(file.getContentType())
-                    .contentLength(file.getSize())
-                    .metadata(Map.of(
-                            "user-id", String.valueOf(userId),
-                            "interview-id", String.valueOf(interviewId),
-                            "question-id", String.valueOf(questionId)
-                    ))
-                    .build();
-
-            s3Client.putObject(putRequest, RequestBody.fromInputStream(file.getInputStream(), file.getSize()));
-            log.info("Uploaded video to S3: key={}, user={}", key, userId);
-
+            Path filePath = resolveAndCreateDirs(key);
+            Files.copy(file.getInputStream(), filePath, StandardCopyOption.REPLACE_EXISTING);
+            log.info("Uploaded video to local storage: key={}, user={}", key, userId);
             return key;
         } catch (IOException e) {
-            log.error("Failed to read video file for upload: user={}, interview={}, question={}",
+            log.error("Failed to save video file: user={}, interview={}, question={}",
                     userId, interviewId, questionId, e);
             throw new RuntimeException("Failed to upload video: " + e.getMessage(), e);
-        } catch (S3Exception e) {
-            log.error("S3 error uploading video: key={}, statusCode={}", key, e.statusCode(), e);
-            throw new RuntimeException("Failed to upload video to S3: " + e.getMessage(), e);
         }
     }
 
     /**
-     * Upload a resume file to S3.
+     * Upload a resume file to local storage.
      *
      * @param file   the resume file (PDF or DOCX)
      * @param userId owner user ID
-     * @return the S3 object key (NOT a presigned URL)
+     * @return the storage key (NOT a URL)
      */
     public String uploadResumeFile(MultipartFile file, Long userId) {
         String timestamp = String.valueOf(Instant.now().toEpochMilli());
@@ -145,61 +89,40 @@ public class VideoStorageService {
         String key = String.format("resumes/%d/resume_%s%s", userId, timestamp, extension);
 
         try {
-            PutObjectRequest putRequest = PutObjectRequest.builder()
-                    .bucket(bucketName)
-                    .key(key)
-                    .contentType(file.getContentType())
-                    .contentLength(file.getSize())
-                    .metadata(Map.of(
-                            "user-id", String.valueOf(userId),
-                            "original-filename", originalFilename != null ? originalFilename : "resume"
-                    ))
-                    .build();
-
-            s3Client.putObject(putRequest, RequestBody.fromInputStream(file.getInputStream(), file.getSize()));
-            log.info("Uploaded resume to S3: key={}, user={}", key, userId);
-
+            Path filePath = resolveAndCreateDirs(key);
+            Files.copy(file.getInputStream(), filePath, StandardCopyOption.REPLACE_EXISTING);
+            log.info("Uploaded resume to local storage: key={}, user={}", key, userId);
             return key;
         } catch (IOException e) {
-            log.error("Failed to read resume file for upload: user={}", userId, e);
+            log.error("Failed to save resume file: user={}", userId, e);
             throw new RuntimeException("Failed to upload resume: " + e.getMessage(), e);
-        } catch (S3Exception e) {
-            log.error("S3 error uploading resume: key={}, statusCode={}", key, e.statusCode(), e);
-            throw new RuntimeException("Failed to upload resume to S3: " + e.getMessage(), e);
         }
     }
 
     /**
-     * Upload raw bytes to S3 (used by TTS audio and avatar video pipeline).
+     * Upload raw bytes to local storage (used by TTS audio and avatar video
+     * pipeline).
      *
      * @param data        the file bytes
-     * @param key         the S3 object key
-     * @param contentType the MIME type (e.g., "audio/mpeg", "video/mp4")
-     * @return the S3 object key (same as input — returned for API consistency)
+     * @param key         the storage key
+     * @param contentType the MIME type (unused for local storage, kept for API
+     *                    compatibility)
+     * @return the storage key (same as input — returned for API consistency)
      */
     public String uploadBytes(byte[] data, String key, String contentType) {
         try {
-            PutObjectRequest putRequest = PutObjectRequest.builder()
-                    .bucket(bucketName)
-                    .key(key)
-                    .contentType(contentType)
-                    .contentLength((long) data.length)
-                    .build();
-
-            s3Client.putObject(putRequest, RequestBody.fromBytes(data));
-            log.info("Uploaded bytes to S3: key={}, size={}, type={}", key, data.length, contentType);
-
+            Path filePath = resolveAndCreateDirs(key);
+            Files.write(filePath, data);
+            log.info("Uploaded bytes to local storage: key={}, size={}, type={}", key, data.length, contentType);
             return key;
-        } catch (S3Exception e) {
-            log.error("S3 error uploading bytes: key={}, statusCode={}", key, e.statusCode(), e);
-            throw new RuntimeException("Failed to upload to S3: " + e.getMessage(), e);
+        } catch (IOException e) {
+            log.error("Failed to write bytes to local storage: key={}", key, e);
+            throw new RuntimeException("Failed to upload file: " + e.getMessage(), e);
         }
     }
 
     /**
      * @deprecated Use {@link #uploadBytes(byte[], String, String)} instead.
-     *             This method exists only for backward compatibility during migration.
-     *             It delegates to {@code uploadBytes} and returns the S3 key.
      */
     @Deprecated(forRemoval = true, since = "P1")
     public String uploadAudioBytes(byte[] audioData, String key, String contentType) {
@@ -207,127 +130,71 @@ public class VideoStorageService {
     }
 
     // ════════════════════════════════════════════════════════════════
-    // Presigned URL Generation
+    // URL Generation (local HTTP endpoints replace presigned URLs)
     // ════════════════════════════════════════════════════════════════
 
     /**
-     * Generate a presigned GET URL for accessing an S3 object.
+     * Generate a URL for accessing a locally stored file.
      *
-     * <p>Used when building DTOs for the frontend — generates a short-lived
-     * URL for video playback, audio playback, or resume download.</p>
+     * <p>
+     * Returns a URL like {@code http://localhost:8080/api/files/some/key}.
+     * </p>
      *
-     * @param s3Key the S3 object key stored in the database
-     * @return a presigned GET URL valid for {@code presignedGetDurationMinutes}
+     * @param key the storage key
+     * @return an HTTP URL for the file
      * @throws IllegalArgumentException if the key is null or blank
      */
-    public String generatePresignedGetUrl(String s3Key) {
-        if (s3Key == null || s3Key.isBlank()) {
-            throw new IllegalArgumentException("S3 key must not be null or blank");
+    public String generatePresignedGetUrl(String key) {
+        if (key == null || key.isBlank()) {
+            throw new IllegalArgumentException("Storage key must not be null or blank");
         }
-
-        try {
-            GetObjectRequest getRequest = GetObjectRequest.builder()
-                    .bucket(bucketName)
-                    .key(s3Key)
-                    .build();
-
-            GetObjectPresignRequest presignRequest = GetObjectPresignRequest.builder()
-                    .signatureDuration(Duration.ofMinutes(presignedGetDurationMinutes))
-                    .getObjectRequest(getRequest)
-                    .build();
-
-            PresignedGetObjectRequest presigned = s3Presigner.presignGetObject(presignRequest);
-            log.debug("Generated presigned GET URL for key={}, expires in {} min", s3Key, presignedGetDurationMinutes);
-            return presigned.url().toString();
-        } catch (S3Exception e) {
-            log.error("Failed to generate presigned GET URL for key={}", s3Key, e);
-            throw new RuntimeException("Failed to generate presigned GET URL: " + e.getMessage(), e);
-        }
+        String url = appBaseUrl + "/api/files/" + key;
+        log.debug("Generated file URL for key={}", key);
+        return url;
     }
 
     /**
-     * Generate a presigned GET URL with a custom duration.
+     * Generate a URL for accessing a locally stored file (custom duration ignored).
      *
-     * <p>Used when a specific expiry time is needed, e.g., when providing a URL
-     * to AssemblyAI for transcription (needs to be valid long enough for processing).</p>
-     *
-     * @param s3Key          the S3 object key
-     * @param durationMinutes custom validity duration in minutes
-     * @return a presigned GET URL valid for the specified duration
+     * @param key             the storage key
+     * @param durationMinutes ignored (kept for API compatibility)
+     * @return an HTTP URL for the file
      */
-    public String generatePresignedGetUrl(String s3Key, int durationMinutes) {
-        if (s3Key == null || s3Key.isBlank()) {
-            throw new IllegalArgumentException("S3 key must not be null or blank");
-        }
-
-        try {
-            GetObjectRequest getRequest = GetObjectRequest.builder()
-                    .bucket(bucketName)
-                    .key(s3Key)
-                    .build();
-
-            GetObjectPresignRequest presignRequest = GetObjectPresignRequest.builder()
-                    .signatureDuration(Duration.ofMinutes(durationMinutes))
-                    .getObjectRequest(getRequest)
-                    .build();
-
-            PresignedGetObjectRequest presigned = s3Presigner.presignGetObject(presignRequest);
-            log.debug("Generated presigned GET URL for key={}, expires in {} min", s3Key, durationMinutes);
-            return presigned.url().toString();
-        } catch (S3Exception e) {
-            log.error("Failed to generate presigned GET URL for key={}", s3Key, e);
-            throw new RuntimeException("Failed to generate presigned GET URL: " + e.getMessage(), e);
-        }
+    public String generatePresignedGetUrl(String key, int durationMinutes) {
+        return generatePresignedGetUrl(key);
     }
 
     /**
-     * Generate a presigned PUT URL for direct-to-S3 uploads from the frontend.
+     * Generate a URL for direct file upload (raw PUT body).
      *
-     * <p>The frontend uses this URL to upload video response files directly to S3
-     * via HTTP PUT, bypassing the backend server entirely. This eliminates the
-     * bandwidth and memory bottleneck of proxying large video files through
-     * the application server.</p>
+     * <p>
+     * Returns an upload URL like
+     * {@code http://localhost:8080/api/files/upload-raw/some/key}.
+     * The frontend sends the file as raw request body (same as S3 presigned PUT).
+     * </p>
      *
-     * @param s3Key       the S3 object key where the file will be stored
-     * @param contentType expected MIME type of the upload (e.g., "video/webm")
-     * @return a presigned PUT URL valid for {@code presignedPutDurationMinutes}
+     * @param key         the storage key where the file will be stored
+     * @param contentType expected MIME type (unused for local storage, kept for API
+     *                    compatibility)
+     * @return an HTTP URL for uploading the file
      */
-    public String generatePresignedPutUrl(String s3Key, String contentType) {
-        try {
-            PutObjectRequest putRequest = PutObjectRequest.builder()
-                    .bucket(bucketName)
-                    .key(s3Key)
-                    .contentType(contentType)
-                    .build();
-
-            PutObjectPresignRequest presignRequest = PutObjectPresignRequest.builder()
-                    .signatureDuration(Duration.ofMinutes(presignedPutDurationMinutes))
-                    .putObjectRequest(putRequest)
-                    .build();
-
-            PresignedPutObjectRequest presigned = s3Presigner.presignPutObject(presignRequest);
-            log.info("Generated presigned PUT URL for key={}, expires in {} min", s3Key, presignedPutDurationMinutes);
-            return presigned.url().toString();
-        } catch (S3Exception e) {
-            log.error("Failed to generate presigned PUT URL for key={}", s3Key, e);
-            throw new RuntimeException("Failed to generate presigned PUT URL: " + e.getMessage(), e);
-        }
+    public String generatePresignedPutUrl(String key, String contentType) {
+        String url = appBaseUrl + "/api/files/upload-raw/" + key;
+        log.info("Generated upload URL for key={}", key);
+        return url;
     }
 
     // ════════════════════════════════════════════════════════════════
-    // S3 Object Operations
+    // File Operations
     // ════════════════════════════════════════════════════════════════
 
     /**
-     * Generate an S3 key for a user's video response upload.
-     *
-     * <p>Called by the presigned PUT upload flow to compute the key
-     * before generating the presigned URL.</p>
+     * Generate a storage key for a user's video response upload.
      *
      * @param userId      owner user ID
      * @param interviewId interview ID
      * @param questionId  question ID
-     * @return the computed S3 key
+     * @return the computed storage key
      */
     public String buildVideoResponseKey(Long userId, Long interviewId, Long questionId) {
         String timestamp = String.valueOf(Instant.now().toEpochMilli());
@@ -336,62 +203,57 @@ public class VideoStorageService {
     }
 
     /**
-     * Delete an object from S3.
+     * Delete a file from local storage.
      *
-     * <p>Failures are logged but do not throw exceptions (graceful degradation).
-     * This prevents S3 cleanup errors from blocking business logic.</p>
+     * <p>
+     * Failures are logged but do not throw exceptions (graceful degradation).
+     * </p>
      *
-     * @param s3Key the S3 object key to delete
+     * @param key the storage key to delete
      */
-    public void deleteFile(String s3Key) {
+    public void deleteFile(String key) {
         try {
-            DeleteObjectRequest deleteRequest = DeleteObjectRequest.builder()
-                    .bucket(bucketName)
-                    .key(s3Key)
-                    .build();
-
-            s3Client.deleteObject(deleteRequest);
-            log.info("Deleted S3 object: key={}", s3Key);
-        } catch (S3Exception e) {
-            log.error("Failed to delete S3 object: key={}, statusCode={}", s3Key, e.statusCode(), e);
+            Path filePath = Path.of(storageRootPath).resolve(key).normalize();
+            if (Files.deleteIfExists(filePath)) {
+                log.info("Deleted file: key={}", key);
+            } else {
+                log.debug("File not found for deletion: key={}", key);
+            }
+        } catch (IOException e) {
+            log.error("Failed to delete file: key={}", key, e);
             // Graceful — don't throw, just log
         }
     }
 
     /**
-     * Check if an object exists in S3.
+     * Check if a file exists in local storage.
      *
-     * <p>Used by the confirm-upload endpoint to verify that the frontend
-     * successfully uploaded the file via presigned PUT.</p>
-     *
-     * @param s3Key the S3 object key to check
-     * @return true if the object exists
+     * @param key the storage key to check
+     * @return true if the file exists
      */
-    public boolean fileExists(String s3Key) {
-        try {
-            HeadObjectRequest headRequest = HeadObjectRequest.builder()
-                    .bucket(bucketName)
-                    .key(s3Key)
-                    .build();
-
-            s3Client.headObject(headRequest);
-            return true;
-        } catch (NoSuchKeyException e) {
-            return false;
-        } catch (S3Exception e) {
-            log.warn("Error checking S3 object existence: key={}, statusCode={}", s3Key, e.statusCode(), e);
-            return false;
-        }
+    public boolean fileExists(String key) {
+        Path filePath = Path.of(storageRootPath).resolve(key).normalize();
+        return Files.exists(filePath);
     }
 
     /**
      * @deprecated Use {@link #generatePresignedGetUrl(String)} instead.
-     *             This method exists for backward compatibility during migration.
-     *             The {@code validDays} parameter is ignored — the configured
-     *             {@code presignedGetDurationMinutes} is used instead.
      */
     @Deprecated(forRemoval = true, since = "P1")
     public String generatePresignedUrl(String key, int validDays) {
-        return generatePresignedGetUrl(key, validDays * 24 * 60);
+        return generatePresignedGetUrl(key);
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // Internal helpers
+    // ════════════════════════════════════════════════════════════════
+
+    /**
+     * Resolve a key to a full file path and create parent directories.
+     */
+    private Path resolveAndCreateDirs(String key) throws IOException {
+        Path filePath = Path.of(storageRootPath).resolve(key).normalize();
+        Files.createDirectories(filePath.getParent());
+        return filePath;
     }
 }

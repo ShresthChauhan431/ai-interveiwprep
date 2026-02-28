@@ -24,12 +24,14 @@ class CachedAvatarServiceTest {
     @Mock
     private VideoStorageService videoStorageService;
 
+    @Mock
+    private com.interview.platform.repository.AvatarVideoCacheRepository cacheRepository;
+
     @InjectMocks
     private CachedAvatarService cachedAvatarService;
 
     private static final String DEFAULT_VOICE_ID = "21m00Tcm4TlvDq8ikWAM";
-    private static final String DEFAULT_AVATAR_IMAGE_URL =
-            "https://d-id-public-bucket.s3.us-west-2.amazonaws.com/alice.jpg";
+    private static final String DEFAULT_AVATAR_IMAGE_URL = "https://d-id-public-bucket.s3.us-west-2.amazonaws.com/alice.jpg";
     private static final double DEFAULT_VOICE_STABILITY = 0.5;
     private static final double DEFAULT_SIMILARITY_BOOST = 0.75;
 
@@ -120,15 +122,11 @@ class CachedAvatarServiceTest {
             when(videoStorageService.fileExists(cacheKey)).thenReturn(false);
             when(avatarVideoService.generateAvatarVideo(questionText, 201L))
                     .thenReturn("avatar-videos/question_201_1700000000.mp4");
-            // copyToCache calls fileExists on the source key
-            when(videoStorageService.fileExists("avatar-videos/question_201_1700000000.mp4"))
-                    .thenReturn(true);
-
             // Act
             String result = cachedAvatarService.getOrGenerateAvatar(questionText, 201L);
 
-            // Assert — returns the cache key (not the generated key)
-            assertThat(result).isEqualTo(cacheKey);
+            // Assert — returns the generated key
+            assertThat(result).isEqualTo("avatar-videos/question_201_1700000000.mp4");
 
             // Assert — avatar generation was invoked
             verify(avatarVideoService).generateAvatarVideo(questionText, 201L);
@@ -143,9 +141,6 @@ class CachedAvatarServiceTest {
             when(videoStorageService.fileExists(cacheKey)).thenReturn(false);
             when(avatarVideoService.generateAvatarVideo(questionText, 500L))
                     .thenReturn("avatar-videos/question_500_ts.mp4");
-            when(videoStorageService.fileExists("avatar-videos/question_500_ts.mp4"))
-                    .thenReturn(true);
-
             cachedAvatarService.getOrGenerateAvatar(questionText, 500L);
 
             verify(avatarVideoService).generateAvatarVideo(questionText, 500L);
@@ -175,13 +170,10 @@ class CachedAvatarServiceTest {
             when(videoStorageService.fileExists(cacheKey)).thenReturn(false);
             when(avatarVideoService.generateAvatarVideo(questionText, 400L))
                     .thenReturn(null);
-            // copyToCache with null source — should handle gracefully
-            when(videoStorageService.fileExists(isNull())).thenReturn(false);
-
-            // Act — should still return the cache key (even though copy failed)
+            // Act
             String result = cachedAvatarService.getOrGenerateAvatar(questionText, 400L);
 
-            assertThat(result).isEqualTo(cacheKey);
+            assertThat(result).isNull();
         }
     }
 
@@ -505,23 +497,20 @@ class CachedAvatarServiceTest {
         }
 
         @Test
-        @DisplayName("Should handle copyToCache failure gracefully (non-fatal) and still return cache key")
-        void testCopyToCacheFailure_NonFatal() {
+        @DisplayName("Should return generated key even if copy is skipped")
+        void testCopyToCache_Skipped() {
             String questionText = "Handle copy failure gracefully.";
             String cacheKey = cachedAvatarService.buildCacheS3Key(questionText);
 
             when(videoStorageService.fileExists(cacheKey)).thenReturn(false);
             when(avatarVideoService.generateAvatarVideo(questionText, 201L))
                     .thenReturn("avatar-videos/question_201_ts.mp4");
-            // Source key does not exist (eventual consistency issue)
-            when(videoStorageService.fileExists("avatar-videos/question_201_ts.mp4"))
-                    .thenReturn(false);
 
-            // Act — should not throw
+            // Act
             String result = cachedAvatarService.getOrGenerateAvatar(questionText, 201L);
 
-            // Assert — still returns the cache key
-            assertThat(result).isEqualTo(cacheKey);
+            // Assert — returns the generated key
+            assertThat(result).isEqualTo("avatar-videos/question_201_ts.mp4");
 
             // Verify generation was called
             verify(avatarVideoService).generateAvatarVideo(questionText, 201L);

@@ -90,6 +90,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     const register = useCallback(async (data: RegisterRequest) => {
         const response = await authService.register(data);
+        // Save token so subsequent API calls are authenticated
+        if (response.token) {
+            localStorage.setItem('auth_token', response.token);
+            const { setAuthToken } = await import('../services/api.service');
+            setAuthToken(response.token);
+        }
         setUser({
             id: response.userId,
             name: response.name,

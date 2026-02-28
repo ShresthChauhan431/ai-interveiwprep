@@ -21,39 +21,41 @@ import java.util.Optional;
  *
  * <h3>P1 Changes from P0:</h3>
  * <ul>
- *   <li><strong>Event-driven avatar pipeline:</strong> Previously,
- *       {@code startInterview()} directly called
- *       {@code AvatarVideoService.generateAvatarVideoAsync()} for each question
- *       inside the same transaction, with fire-and-forget {@code CompletableFuture}
- *       callbacks that could silently fail. Now, questions are saved in the
- *       transaction, and a {@link QuestionsCreatedEvent} is published after
- *       the transaction commits. The {@code AvatarPipelineListener} handles
- *       avatar generation asynchronously on virtual threads, with deterministic
- *       caching via {@code CachedAvatarService}.</li>
- *   <li><strong>State machine:</strong> The interview now follows the full
- *       state machine: {@code CREATED → GENERATING_VIDEOS → IN_PROGRESS →
+ * <li><strong>Event-driven avatar pipeline:</strong> Previously,
+ * {@code startInterview()} directly called
+ * {@code AvatarVideoService.generateAvatarVideoAsync()} for each question
+ * inside the same transaction, with fire-and-forget {@code CompletableFuture}
+ * callbacks that could silently fail. Now, questions are saved in the
+ * transaction, and a {@link QuestionsCreatedEvent} is published after
+ * the transaction commits. The {@code AvatarPipelineListener} handles
+ * avatar generation asynchronously on virtual threads, with deterministic
+ * caching via {@code CachedAvatarService}.</li>
+ * <li><strong>State machine:</strong> The interview now follows the full
+ * state machine: {@code CREATED → GENERATING_VIDEOS → IN_PROGRESS →
  *       PROCESSING → COMPLETED}. Previously, interviews were created directly
- *       in {@code IN_PROGRESS} state. The new states allow the frontend to
- *       show loading indicators while avatar videos are being generated.</li>
- *   <li><strong>Presigned URL upload flow:</strong> Added
- *       {@link #generateUploadUrl} and {@link #confirmUpload} methods for
- *       direct-to-S3 video uploads. The previous flow proxied video files
- *       through the backend server ({@code submitResponse} with {@code MultipartFile}),
- *       which was a bandwidth and memory bottleneck. The legacy
- *       {@code submitResponse} method is retained for backward compatibility
- *       but the presigned flow is preferred.</li>
- *   <li><strong>S3 key storage:</strong> All entity fields that previously
- *       stored presigned GET URLs ({@code avatarVideoUrl}, {@code videoUrl})
- *       now store S3 object keys. Presigned GET URLs are generated on-demand
- *       when building DTOs for the frontend via
- *       {@link VideoStorageService#generatePresignedGetUrl}. This eliminates
- *       the URL expiry problem where stored URLs became invalid after 7 days.</li>
- *   <li><strong>SLF4J logging:</strong> Migrated from {@code java.util.logging}
- *       to SLF4J for structured, parameterized logging consistent with the
- *       rest of the application.</li>
+ * in {@code IN_PROGRESS} state. The new states allow the frontend to
+ * show loading indicators while avatar videos are being generated.</li>
+ * <li><strong>Presigned URL upload flow:</strong> Added
+ * {@link #generateUploadUrl} and {@link #confirmUpload} methods for
+ * direct-to-S3 video uploads. The previous flow proxied video files
+ * through the backend server ({@code submitResponse} with
+ * {@code MultipartFile}),
+ * which was a bandwidth and memory bottleneck. The legacy
+ * {@code submitResponse} method is retained for backward compatibility
+ * but the presigned flow is preferred.</li>
+ * <li><strong>S3 key storage:</strong> All entity fields that previously
+ * stored presigned GET URLs ({@code avatarVideoUrl}, {@code videoUrl})
+ * now store S3 object keys. Presigned GET URLs are generated on-demand
+ * when building DTOs for the frontend via
+ * {@link VideoStorageService#generatePresignedGetUrl}. This eliminates
+ * the URL expiry problem where stored URLs became invalid after 7 days.</li>
+ * <li><strong>SLF4J logging:</strong> Migrated from {@code java.util.logging}
+ * to SLF4J for structured, parameterized logging consistent with the
+ * rest of the application.</li>
  * </ul>
  *
  * <h3>State Machine:</h3>
+ * 
  * <pre>
  *   CREATED ──► GENERATING_VIDEOS ──► IN_PROGRESS ──► PROCESSING ──► COMPLETED
  *                      │                    │               │
@@ -62,19 +64,22 @@ import java.util.Optional;
  *
  * <h3>Interview Lifecycle:</h3>
  * <ol>
- *   <li>{@code POST /api/interviews/start} → creates interview (GENERATING_VIDEOS),
- *       generates questions via OpenAI, publishes {@code QuestionsCreatedEvent}</li>
- *   <li>Frontend polls {@code GET /api/interviews/{id}} until status = IN_PROGRESS</li>
- *   <li>Frontend requests presigned PUT URLs, uploads videos directly to S3</li>
- *   <li>Frontend confirms uploads via {@code POST /api/interviews/{id}/confirm-upload}</li>
- *   <li>{@code POST /api/interviews/{id}/complete} → transitions to PROCESSING,
- *       triggers async AI feedback generation</li>
- *   <li>Frontend polls feedback endpoint until status = COMPLETED</li>
+ * <li>{@code POST /api/interviews/start} → creates interview
+ * (GENERATING_VIDEOS),
+ * generates questions via Ollama, publishes {@code QuestionsCreatedEvent}</li>
+ * <li>Frontend polls {@code GET /api/interviews/{id}} until status =
+ * IN_PROGRESS</li>
+ * <li>Frontend requests presigned PUT URLs, uploads videos directly to S3</li>
+ * <li>Frontend confirms uploads via
+ * {@code POST /api/interviews/{id}/confirm-upload}</li>
+ * <li>{@code POST /api/interviews/{id}/complete} → transitions to PROCESSING,
+ * triggers async AI feedback generation</li>
+ * <li>Frontend polls feedback endpoint until status = COMPLETED</li>
  * </ol>
  *
  * @see com.interview.platform.event.QuestionsCreatedEvent
  * @see com.interview.platform.event.AvatarPipelineListener
- * @see com.interview.platform.service.CachedAvatarService
+ * @see com.interview.platform.service.OllamaService
  * @see com.interview.platform.task.InterviewRecoveryTask
  */
 @Service
@@ -88,30 +93,30 @@ public class InterviewService {
     private final QuestionRepository questionRepository;
     private final ResponseRepository responseRepository;
     private final UserRepository userRepository;
-    private final OpenAIService openAIService;
+    private final OllamaService ollamaService;
     private final VideoStorageService videoStorageService;
     private final SpeechToTextService speechToTextService;
     private final AIFeedbackService aiFeedbackService;
     private final ApplicationEventPublisher eventPublisher;
 
     public InterviewService(InterviewRepository interviewRepository,
-                            ResumeRepository resumeRepository,
-                            JobRoleRepository jobRoleRepository,
-                            QuestionRepository questionRepository,
-                            ResponseRepository responseRepository,
-                            UserRepository userRepository,
-                            OpenAIService openAIService,
-                            VideoStorageService videoStorageService,
-                            SpeechToTextService speechToTextService,
-                            AIFeedbackService aiFeedbackService,
-                            ApplicationEventPublisher eventPublisher) {
+            ResumeRepository resumeRepository,
+            JobRoleRepository jobRoleRepository,
+            QuestionRepository questionRepository,
+            ResponseRepository responseRepository,
+            UserRepository userRepository,
+            OllamaService ollamaService,
+            VideoStorageService videoStorageService,
+            SpeechToTextService speechToTextService,
+            AIFeedbackService aiFeedbackService,
+            ApplicationEventPublisher eventPublisher) {
         this.interviewRepository = interviewRepository;
         this.resumeRepository = resumeRepository;
         this.jobRoleRepository = jobRoleRepository;
         this.questionRepository = questionRepository;
         this.responseRepository = responseRepository;
         this.userRepository = userRepository;
-        this.openAIService = openAIService;
+        this.ollamaService = ollamaService;
         this.videoStorageService = videoStorageService;
         this.speechToTextService = speechToTextService;
         this.aiFeedbackService = aiFeedbackService;
@@ -125,24 +130,30 @@ public class InterviewService {
     /**
      * Start a new interview session.
      *
-     * <p>Creates the Interview entity with status {@code GENERATING_VIDEOS},
+     * <p>
+     * Creates the Interview entity with status {@code GENERATING_VIDEOS},
      * generates AI questions via OpenAI, saves all Question entities, and
      * publishes a {@link QuestionsCreatedEvent} that will be dispatched
-     * after the transaction commits.</p>
+     * after the transaction commits.
+     * </p>
      *
      * <h3>P1 State Machine Change:</h3>
-     * <p>Previously set status to {@code IN_PROGRESS} immediately and
+     * <p>
+     * Previously set status to {@code IN_PROGRESS} immediately and
      * fired async avatar generation via {@code CompletableFuture}. Now uses
      * {@code GENERATING_VIDEOS} to indicate that avatar videos are being
      * generated asynchronously. The {@code AvatarPipelineListener} transitions
      * the interview to {@code IN_PROGRESS} when all avatar videos are ready
-     * (or after timeout via {@code InterviewRecoveryTask}).</p>
+     * (or after timeout via {@code InterviewRecoveryTask}).
+     * </p>
      *
      * <h3>Event Publishing:</h3>
-     * <p>The {@code QuestionsCreatedEvent} is published inside the transaction
+     * <p>
+     * The {@code QuestionsCreatedEvent} is published inside the transaction
      * but dispatched via {@code @TransactionalEventListener(phase = AFTER_COMMIT)}
      * only after the transaction commits successfully. This ensures that
-     * the listener can always find the questions in the database.</p>
+     * the listener can always find the questions in the database.
+     * </p>
      *
      * @param userId    the authenticated user's ID
      * @param resumeId  the resume to base questions on
@@ -152,8 +163,9 @@ public class InterviewService {
      *                          if resume doesn't belong to user or has no text
      */
     @Transactional
-    public InterviewDTO startInterview(Long userId, Long resumeId, Long jobRoleId) {
-        log.info("Starting interview for user: {}, resume: {}, jobRole: {}", userId, resumeId, jobRoleId);
+    public InterviewDTO startInterview(Long userId, Long resumeId, Long jobRoleId, Integer numQuestions) {
+        log.info("Starting interview for user: {}, resume: {}, jobRole: {}, numQuestions: {}", userId, resumeId,
+                jobRoleId, numQuestions);
 
         // ── Validate user ────────────────────────────────────────
         User user = userRepository.findById(userId)
@@ -188,42 +200,38 @@ public class InterviewService {
 
         log.info("Interview created with ID: {} (status=GENERATING_VIDEOS)", interview.getId());
 
-        // ── Generate questions using OpenAI ──────────────────────
-        List<QuestionDTO> generatedQuestions = openAIService.generateInterviewQuestions(
-                resumeText, jobRole.getTitle());
+        int finalNumQuestions = (numQuestions != null && numQuestions > 0 && numQuestions <= 20) ? numQuestions : 10;
 
-        // ── Save Question entities ───────────────────────────────
-        List<Question> savedQuestions = new ArrayList<>();
+        // Step 8: Generate questions via Ollama
+        List<Question> questions = ollamaService.generateQuestionsWithResilience(resume, jobRole, finalNumQuestions);
+
+        // Step 9: Save questions associated with interview
         List<Long> questionIds = new ArrayList<>();
-        int questionNumber = 1;
-
-        for (QuestionDTO dto : generatedQuestions) {
-            Question question = new Question();
+        for (int i = 0; i < questions.size(); i++) {
+            Question question = questions.get(i);
+            question.setQuestionNumber(i + 1); // Using questionNumber for sequence
             question.setInterview(interview);
-            question.setQuestionText(dto.getQuestionText());
-            question.setQuestionNumber(questionNumber);
-            question.setCategory(dto.getCategory());
-            question.setDifficulty(dto.getDifficulty());
-            question = questionRepository.save(question);
+            question.setCategory("GENERAL"); // Ollama simple array prompt returns strings, default to GENERAL
+            question.setDifficulty("MEDIUM");
+            question = questionRepository.save(question); // Save to get ID
 
-            savedQuestions.add(question);
             questionIds.add(question.getId());
-            questionNumber++;
         }
 
-        log.info("Saved {} questions for interview ID: {}", savedQuestions.size(), interview.getId());
+        // Add questions to interview for immediate DTO mapping
+        interview.getQuestions().addAll(questions);
+
+        log.info("Saved {} questions for interview ID: {}", questions.size(), interview.getId());
 
         // ── Publish event (dispatched after transaction commit) ──
         // The AvatarPipelineListener will receive this event on a virtual
-        // thread and orchestrate avatar generation for each question via
-        // CachedAvatarService. When all questions are processed, the
-        // listener transitions the interview to IN_PROGRESS.
+        // thread and generate videos in the background.
         eventPublisher.publishEvent(new QuestionsCreatedEvent(this, interview.getId(), questionIds));
 
         log.info("QuestionsCreatedEvent published for interview ID: {} with {} question IDs",
                 interview.getId(), questionIds.size());
 
-        return mapToInterviewDTO(interview, savedQuestions);
+        return mapToInterviewDTO(interview, questions);
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -233,16 +241,18 @@ public class InterviewService {
     /**
      * Generate a presigned PUT URL for direct-to-S3 video upload.
      *
-     * <p>The frontend uses this URL to upload the video response file
+     * <p>
+     * The frontend uses this URL to upload the video response file
      * directly to S3 via HTTP PUT, bypassing the backend server entirely.
      * This eliminates the bandwidth and memory bottleneck of proxying
-     * large video files through the application server.</p>
+     * large video files through the application server.
+     * </p>
      *
      * <h3>Flow:</h3>
      * <ol>
-     *   <li>Frontend calls this endpoint to get a presigned PUT URL</li>
-     *   <li>Frontend uploads the video directly to S3 using the URL</li>
-     *   <li>Frontend calls {@link #confirmUpload} with the S3 key</li>
+     * <li>Frontend calls this endpoint to get a presigned PUT URL</li>
+     * <li>Frontend uploads the video directly to S3 using the URL</li>
+     * <li>Frontend calls {@link #confirmUpload} with the S3 key</li>
      * </ol>
      *
      * @param userId      the authenticated user's ID
@@ -255,7 +265,7 @@ public class InterviewService {
      */
     @Transactional(readOnly = true)
     public PresignedUrlResponse generateUploadUrl(Long userId, Long interviewId,
-                                                   Long questionId, String contentType) {
+            Long questionId, String contentType) {
         log.info("Generating presigned upload URL: user={}, interview={}, question={}",
                 userId, interviewId, questionId);
 
@@ -284,7 +294,8 @@ public class InterviewService {
 
         // Generate S3 key and presigned PUT URL
         String effectiveContentType = (contentType != null && !contentType.isBlank())
-                ? contentType : "video/webm";
+                ? contentType
+                : "video/webm";
 
         String s3Key = videoStorageService.buildVideoResponseKey(userId, interviewId, questionId);
         String uploadUrl = videoStorageService.generatePresignedPutUrl(s3Key, effectiveContentType);
@@ -299,21 +310,25 @@ public class InterviewService {
     /**
      * Confirm a direct-to-S3 video upload and create the Response entity.
      *
-     * <p>Called by the frontend after it has successfully uploaded a video
-     * file to S3 using a presigned PUT URL. This method:</p>
+     * <p>
+     * Called by the frontend after it has successfully uploaded a video
+     * file to S3 using a presigned PUT URL. This method:
+     * </p>
      * <ol>
-     *   <li>Validates the interview ownership and state</li>
-     *   <li>Validates the question belongs to the interview</li>
-     *   <li>Checks for duplicate responses (idempotency)</li>
-     *   <li>Verifies the S3 object exists (HEAD request)</li>
-     *   <li>Creates and persists the Response entity with the S3 key</li>
-     *   <li>Triggers async transcription via AssemblyAI</li>
+     * <li>Validates the interview ownership and state</li>
+     * <li>Validates the question belongs to the interview</li>
+     * <li>Checks for duplicate responses (idempotency)</li>
+     * <li>Verifies the S3 object exists (HEAD request)</li>
+     * <li>Creates and persists the Response entity with the S3 key</li>
+     * <li>Triggers async transcription via AssemblyAI</li>
      * </ol>
      *
      * <h3>Idempotency:</h3>
-     * <p>If a response already exists for the given question, this method
+     * <p>
+     * If a response already exists for the given question, this method
      * throws an exception. The frontend should check the question's
-     * {@code answered} flag before calling this endpoint.</p>
+     * {@code answered} flag before calling this endpoint.
+     * </p>
      *
      * @param userId      the authenticated user's ID
      * @param interviewId the interview this response belongs to
@@ -387,17 +402,23 @@ public class InterviewService {
     /**
      * Submit a video response to a question (legacy server-proxied upload).
      *
-     * <p><strong>Deprecated:</strong> This method proxies the video file through
+     * <p>
+     * <strong>Deprecated:</strong> This method proxies the video file through
      * the backend server, consuming bandwidth and memory. Use the presigned URL
-     * flow ({@link #generateUploadUrl} + {@link #confirmUpload}) instead.</p>
+     * flow ({@link #generateUploadUrl} + {@link #confirmUpload}) instead.
+     * </p>
      *
-     * <p>Retained for backward compatibility with frontends that haven't been
-     * updated to use the presigned URL flow.</p>
+     * <p>
+     * Retained for backward compatibility with frontends that haven't been
+     * updated to use the presigned URL flow.
+     * </p>
      *
      * <h3>P1 Change:</h3>
-     * <p>Now stores the S3 object key in the Response entity instead of a
+     * <p>
+     * Now stores the S3 object key in the Response entity instead of a
      * presigned GET URL. The S3 key is resolved to a presigned URL on-demand
-     * when building DTOs.</p>
+     * when building DTOs.
+     * </p>
      *
      * @param userId      the authenticated user's ID
      * @param interviewId the interview this response belongs to
@@ -466,9 +487,11 @@ public class InterviewService {
     /**
      * Fetch interview with all questions and response status.
      *
-     * <p>P1: Avatar video URLs and response video URLs in the returned DTO
+     * <p>
+     * P1: Avatar video URLs and response video URLs in the returned DTO
      * are now generated on-demand as presigned GET URLs from stored S3 keys.
-     * This ensures URLs are always fresh and valid.</p>
+     * This ensures URLs are always fresh and valid.
+     * </p>
      *
      * @param interviewId the interview to fetch
      * @param userId      the authenticated user's ID (for ownership validation)
@@ -492,14 +515,18 @@ public class InterviewService {
     /**
      * Mark an interview as complete and trigger async feedback generation.
      *
-     * <p>Transitions the interview from {@code IN_PROGRESS} to {@code PROCESSING}.
+     * <p>
+     * Transitions the interview from {@code IN_PROGRESS} to {@code PROCESSING}.
      * The {@link AIFeedbackService} generates feedback asynchronously, and upon
-     * completion updates the interview status to {@code COMPLETED}.</p>
+     * completion updates the interview status to {@code COMPLETED}.
+     * </p>
      *
-     * <p>If feedback generation fails, the
+     * <p>
+     * If feedback generation fails, the
      * {@link com.interview.platform.task.InterviewRecoveryTask} will detect
      * the interview stuck in {@code PROCESSING} and transition it to
-     * {@code FAILED} after the configured timeout (default: 30 minutes).</p>
+     * {@code FAILED} after the configured timeout (default: 30 minutes).
+     * </p>
      *
      * @param interviewId the interview to complete
      * @param userId      the authenticated user's ID
@@ -541,6 +568,15 @@ public class InterviewService {
                             log.info("Interview ID: {} completed with score: {}",
                                     interviewId, feedback.getOverallScore());
                         });
+                    })
+                    .exceptionally(ex -> {
+                        log.error("Async feedback generation failed. Transitioning interview ID: {} to FAILED",
+                                interviewId, ex);
+                        interviewRepository.findById(interviewId).ifPresent(i -> {
+                            i.setStatus(InterviewStatus.FAILED);
+                            interviewRepository.save(i);
+                        });
+                        return null;
                     });
         } catch (Exception e) {
             log.error("Failed to initiate feedback generation for interview ID: {}",
@@ -589,6 +625,35 @@ public class InterviewService {
     }
 
     // ════════════════════════════════════════════════════════════════
+    // 7. Delete Interview
+    // ════════════════════════════════════════════════════════════════
+
+    /**
+     * Delete an interview and all its associated data.
+     *
+     * @param interviewId the interview to delete
+     * @param userId      the authenticated user's ID
+     */
+    @Transactional
+    public void deleteInterview(Long interviewId, Long userId) {
+        log.info("Deleting interview ID: {} for user: {}", interviewId, userId);
+
+        Interview interview = interviewRepository.findByIdAndUserId(interviewId, userId)
+                .orElseThrow(() -> new RuntimeException(
+                        "Interview not found or does not belong to user: " + interviewId));
+
+        // Delete responses explicitly first to prevent JPA cascade order constraint
+        // violations
+        List<Response> responses = responseRepository.findByInterviewId(interviewId);
+        responseRepository.deleteAll(responses);
+
+        // Then let cascading deletes handle questions and feedback
+        interviewRepository.delete(interview);
+
+        log.info("Successfully deleted interview ID: {}", interviewId);
+    }
+
+    // ════════════════════════════════════════════════════════════════
     // DTO Mapping (with on-demand presigned URL generation)
     // ════════════════════════════════════════════════════════════════
 
@@ -596,16 +661,22 @@ public class InterviewService {
      * Map an Interview entity and its questions to an InterviewDTO.
      *
      * <h3>P1 Presigned URL Generation:</h3>
-     * <p>S3 keys stored in entity fields ({@code avatarVideoUrl}, {@code videoUrl})
+     * <p>
+     * S3 keys stored in entity fields ({@code avatarVideoUrl}, {@code videoUrl})
      * are resolved to short-lived presigned GET URLs when building the DTO.
-     * This ensures the frontend always receives valid, non-expired URLs.</p>
+     * This ensures the frontend always receives valid, non-expired URLs.
+     * </p>
      *
-     * <p>If a field is null, blank, or already a URL (legacy data), it is
-     * handled gracefully:</p>
+     * <p>
+     * If a field is null, blank, or already a URL (legacy data), it is
+     * handled gracefully:
+     * </p>
      * <ul>
-     *   <li>{@code null} or blank → left as null in the DTO (no avatar/video available)</li>
-     *   <li>Starts with "http" → used as-is (legacy presigned URL, may be expired)</li>
-     *   <li>Otherwise → treated as S3 key and resolved to a presigned GET URL</li>
+     * <li>{@code null} or blank → left as null in the DTO (no avatar/video
+     * available)</li>
+     * <li>Starts with "http" → used as-is (legacy presigned URL, may be
+     * expired)</li>
+     * <li>Otherwise → treated as S3 key and resolved to a presigned GET URL</li>
      * </ul>
      *
      * @param interview the interview entity
@@ -642,6 +713,13 @@ public class InterviewService {
             Optional<Response> responseOpt = responseRepository.findByQuestionId(question.getId());
             qDto.setAnswered(responseOpt.isPresent());
 
+            // P1: Attach response video URL and transcription for review page
+            if (responseOpt.isPresent()) {
+                Response resp = responseOpt.get();
+                qDto.setResponseVideoUrl(resolveToPresignedUrl(resp.getVideoUrl()));
+                qDto.setResponseTranscription(resp.getTranscription());
+            }
+
             questionDTOs.add(qDto);
         }
 
@@ -652,18 +730,23 @@ public class InterviewService {
     /**
      * Resolve an S3 key or URL to a presigned GET URL for frontend consumption.
      *
-     * <p>Handles three cases:</p>
+     * <p>
+     * Handles three cases:
+     * </p>
      * <ol>
-     *   <li>{@code null} or blank → returns {@code null} (no media available)</li>
-     *   <li>Starts with "http" → returns as-is (legacy presigned URL or external URL)</li>
-     *   <li>Otherwise → treated as S3 key and resolved via
-     *       {@link VideoStorageService#generatePresignedGetUrl}</li>
+     * <li>{@code null} or blank → returns {@code null} (no media available)</li>
+     * <li>Starts with "http" → returns as-is (legacy presigned URL or external
+     * URL)</li>
+     * <li>Otherwise → treated as S3 key and resolved via
+     * {@link VideoStorageService#generatePresignedGetUrl}</li>
      * </ol>
      *
-     * <p>This method never throws exceptions — if presigned URL generation
+     * <p>
+     * This method never throws exceptions — if presigned URL generation
      * fails (e.g., S3 is temporarily unavailable), it logs the error and
      * returns {@code null}, allowing the frontend to fall back to text-only
-     * display.</p>
+     * display.
+     * </p>
      *
      * @param s3KeyOrUrl the S3 key, URL, or null
      * @return a presigned GET URL, the original URL, or null

@@ -13,12 +13,15 @@ public class StartInterviewRequest {
     @NotNull(message = "Job Role ID is required")
     private Long jobRoleId;
 
+    private Integer numQuestions; // Optional, defaults handled in service
+
     public StartInterviewRequest() {
     }
 
-    public StartInterviewRequest(Long resumeId, Long jobRoleId) {
+    public StartInterviewRequest(Long resumeId, Long jobRoleId, Integer numQuestions) {
         this.resumeId = resumeId;
         this.jobRoleId = jobRoleId;
+        this.numQuestions = numQuestions;
     }
 
     public Long getResumeId() {
@@ -35,5 +38,13 @@ public class StartInterviewRequest {
 
     public void setJobRoleId(Long jobRoleId) {
         this.jobRoleId = jobRoleId;
+    }
+
+    public Integer getNumQuestions() {
+        return numQuestions;
+    }
+
+    public void setNumQuestions(Integer numQuestions) {
+        this.numQuestions = numQuestions;
     }
 }

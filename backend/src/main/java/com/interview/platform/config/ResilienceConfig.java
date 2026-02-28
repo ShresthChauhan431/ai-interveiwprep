@@ -67,7 +67,8 @@ import java.util.function.Predicate;
  *
  * <h3>Named Instances:</h3>
  * <ul>
- * <li><strong>openai</strong> — OpenAI GPT (question generation, feedback)</li>
+ * <li><strong>ollama</strong> — Ollama Local LLM (question generation,
+ * feedback)</li>
  * <li><strong>elevenlabs</strong> — ElevenLabs TTS (text-to-speech)</li>
  * <li><strong>did</strong> — D-ID (avatar video generation, NOT polling)</li>
  * <li><strong>assemblyai</strong> — AssemblyAI (transcription submission, NOT
@@ -86,7 +87,7 @@ import java.util.function.Predicate;
  * @see com.interview.platform.service.AvatarVideoService
  * @see com.interview.platform.service.TextToSpeechService
  * @see com.interview.platform.service.SpeechToTextService
- * @see com.interview.platform.service.OpenAIService
+ * @see com.interview.platform.service.OllamaService
  * @see com.interview.platform.service.AIFeedbackService
  */
 @Configuration
@@ -196,7 +197,7 @@ public class ResilienceConfig {
 
         // Register named instances — they inherit the default config
         // but can be customized individually if needed via properties
-        registry.retry("openai");
+        registry.retry("ollama");
         registry.retry("elevenlabs");
         registry.retry("did");
         registry.retry("assemblyai");
@@ -264,7 +265,7 @@ public class ResilienceConfig {
         // Register named instances with the default config
         // D-ID gets a more lenient config because it's inherently slow (video
         // generation)
-        registry.circuitBreaker("openai");
+        registry.circuitBreaker("ollama");
         registry.circuitBreaker("elevenlabs");
         registry.circuitBreaker("assemblyai");
 
@@ -317,8 +318,8 @@ public class ResilienceConfig {
     // ════════════════════════════════════════════════════════════════
 
     @Bean
-    public Retry openaiRetry(RetryRegistry registry) {
-        return registry.retry("openai");
+    public Retry ollamaRetry(RetryRegistry registry) {
+        return registry.retry("ollama");
     }
 
     @Bean
@@ -337,8 +338,8 @@ public class ResilienceConfig {
     }
 
     @Bean
-    public CircuitBreaker openaiCircuitBreaker(CircuitBreakerRegistry registry) {
-        return registry.circuitBreaker("openai");
+    public CircuitBreaker ollamaCircuitBreaker(CircuitBreakerRegistry registry) {
+        return registry.circuitBreaker("ollama");
     }
 
     @Bean

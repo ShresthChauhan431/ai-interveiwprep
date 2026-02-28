@@ -5,8 +5,6 @@ import {
   PresignedUrlResponse,
   ConfirmUploadRequest,
   ConfirmUploadResponse,
-  Interview,
-  Question,
   Response as InterviewResponse,
   Feedback,
 } from "../types";
@@ -39,11 +37,13 @@ export const interviewService = {
   async startInterview(
     resumeId: number,
     jobRoleId: number,
+    numQuestions?: number,
   ): Promise<InterviewDTO> {
     try {
       const response = await api.post<InterviewDTO>("/api/interviews/start", {
         resumeId,
         jobRoleId,
+        numQuestions,
       });
       return response.data;
     } catch (error: any) {
@@ -385,6 +385,22 @@ export const interviewService = {
         );
       }
       throw error?.message ? error : new Error("Failed to fetch feedback.");
+    }
+  },
+
+  // ════════════════════════════════════════════════════════════════
+  // 8. Delete Interview
+  // ════════════════════════════════════════════════════════════════
+
+  /**
+   * Delete an interview.
+   * DELETE /api/interviews/{interviewId}
+   */
+  async deleteInterview(interviewId: number): Promise<void> {
+    try {
+      await api.delete(`/api/interviews/${interviewId}`);
+    } catch (error: any) {
+      throw error?.message ? error : new Error("Failed to delete interview.");
     }
   },
 };

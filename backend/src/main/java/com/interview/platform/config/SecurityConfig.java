@@ -25,14 +25,15 @@ import java.util.List;
  *
  * <h3>P0 Changes from prototype:</h3>
  * <ul>
- *   <li><strong>Actuator lockdown:</strong> Previously {@code /actuator/**} was
- *       {@code permitAll()} with {@code show-details=always}, leaking DB connection
- *       status, disk space, and environment info to anonymous users. Now restricted
- *       to ADMIN role only. The {@code show-details} setting is controlled in
- *       {@code application.properties} via {@code when_authorized}.</li>
- *   <li><strong>Configurable CORS:</strong> Previously hardcoded to
- *       {@code http://localhost:3000}. Now reads from {@code app.cors.allowed-origins}
- *       property (comma-separated), defaulting to localhost:3000 for dev.</li>
+ * <li><strong>Actuator lockdown:</strong> Previously {@code /actuator/**} was
+ * {@code permitAll()} with {@code show-details=always}, leaking DB connection
+ * status, disk space, and environment info to anonymous users. Now restricted
+ * to ADMIN role only. The {@code show-details} setting is controlled in
+ * {@code application.properties} via {@code when_authorized}.</li>
+ * <li><strong>Configurable CORS:</strong> Previously hardcoded to
+ * {@code http://localhost:3000}. Now reads from
+ * {@code app.cors.allowed-origins}
+ * property (comma-separated), defaulting to localhost:3000 for dev.</li>
  * </ul>
  */
 @Configuration
@@ -59,9 +60,20 @@ public class SecurityConfig {
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .exceptionHandling(ex -> ex
+                        .authenticationEntryPoint((request, response, authException) -> {
+                            response.setContentType("application/json");
+                            response.setStatus(jakarta.servlet.http.HttpServletResponse.SC_UNAUTHORIZED);
+                            response.getWriter().write(
+                                    "{\"error\":\"Unauthorized\",\"message\":\"Authentication required\",\"status\":401}");
+                        }))
                 .authorizeHttpRequests(auth -> auth
                         // Public endpoints — no authentication required
                         .requestMatchers("/api/auth/**").permitAll()
+                        // Job roles list is read-only and needed before login on the start screen
+                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/job-roles").permitAll()
+                        // File serving — stored files accessible without auth
+                        .requestMatchers("/api/files/**").permitAll()
                         // Actuator — health endpoint is public (details are gated
                         // by show-details=when_authorized in properties), but all
                         // other actuator endpoints require ADMIN role.

@@ -30,7 +30,7 @@ import {
     TrendingUp,
     Visibility,
 } from '@mui/icons-material';
-import { Feedback } from '../../types';
+import { Feedback, asFeedbackList } from '../../types';
 import { interviewService } from '../../services/interview.service';
 
 // ============================================================
@@ -256,12 +256,12 @@ const InterviewComplete: React.FC<InterviewCompleteProps> = ({ interviewId }) =>
                 <AccordionSummary expandIcon={<ExpandMore />}>
                     <TrendingUp color="success" sx={{ mr: 1.5 }} />
                     <Typography fontWeight={600}>
-                        Strengths ({feedback.strengths.length})
+                        Strengths ({asFeedbackList(feedback.strengths).length})
                     </Typography>
                 </AccordionSummary>
                 <AccordionDetails>
                     <List dense disablePadding>
-                        {feedback.strengths.map((item, index) => (
+                        {asFeedbackList(feedback.strengths).map((item, index) => (
                             <ListItem key={index} disablePadding sx={{ py: 0.5 }}>
                                 <ListItemIcon sx={{ minWidth: 32 }}>
                                     <Star sx={{ fontSize: 18, color: 'success.main' }} />
@@ -282,12 +282,12 @@ const InterviewComplete: React.FC<InterviewCompleteProps> = ({ interviewId }) =>
                 <AccordionSummary expandIcon={<ExpandMore />}>
                     <TrendingDown color="error" sx={{ mr: 1.5 }} />
                     <Typography fontWeight={600}>
-                        Areas for Improvement ({feedback.weaknesses.length})
+                        Areas for Improvement ({asFeedbackList(feedback.weaknesses).length})
                     </Typography>
                 </AccordionSummary>
                 <AccordionDetails>
                     <List dense disablePadding>
-                        {feedback.weaknesses.map((item, index) => (
+                        {asFeedbackList(feedback.weaknesses).map((item, index) => (
                             <ListItem key={index} disablePadding sx={{ py: 0.5 }}>
                                 <ListItemIcon sx={{ minWidth: 32 }}>
                                     <TrendingDown sx={{ fontSize: 18, color: 'error.main' }} />
@@ -308,12 +308,12 @@ const InterviewComplete: React.FC<InterviewCompleteProps> = ({ interviewId }) =>
                 <AccordionSummary expandIcon={<ExpandMore />}>
                     <Lightbulb color="warning" sx={{ mr: 1.5 }} />
                     <Typography fontWeight={600}>
-                        Recommendations ({feedback.recommendations.length})
+                        Recommendations ({asFeedbackList(feedback.recommendations).length})
                     </Typography>
                 </AccordionSummary>
                 <AccordionDetails>
                     <List dense disablePadding>
-                        {feedback.recommendations.map((item, index) => (
+                        {asFeedbackList(feedback.recommendations).map((item, index) => (
                             <ListItem key={index} disablePadding sx={{ py: 0.5 }}>
                                 <ListItemIcon sx={{ minWidth: 32 }}>
                                     <Lightbulb sx={{ fontSize: 18, color: 'warning.main' }} />

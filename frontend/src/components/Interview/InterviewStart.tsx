@@ -41,6 +41,7 @@ interface InterviewStartProps {
 
 const InterviewStart: React.FC<InterviewStartProps> = ({ onStart }) => {
   const [selectedJobRole, setSelectedJobRole] = useState<number | null>(null);
+  const [numQuestions, setNumQuestions] = useState<number>(0); // 0 means "Default"
   const [resumeId, setResumeId] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [hasResume, setHasResume] = useState(false);
@@ -136,6 +137,7 @@ const InterviewStart: React.FC<InterviewStartProps> = ({ onStart }) => {
       const result = await interviewService.startInterview(
         resumeId,
         selectedJobRole,
+        numQuestions === 0 ? undefined : numQuestions,
       );
       onStart(result.interviewId);
     } catch (err: any) {
@@ -287,6 +289,41 @@ const InterviewStart: React.FC<InterviewStartProps> = ({ onStart }) => {
                       </Typography>
                     )}
                   </Box>
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        </CardContent>
+      </Card>
+
+      {/* ===== Section 2.5: Number of Questions ===== */}
+      <Card
+        elevation={0}
+        sx={{
+          mb: 3,
+          borderRadius: 3,
+          border: "1px solid",
+          borderColor: "divider",
+        }}
+      >
+        <CardContent sx={{ p: 3 }}>
+          <Typography variant="subtitle1" fontWeight={600} gutterBottom>
+            Number of Questions
+          </Typography>
+          <FormControl fullWidth size="small">
+            <InputLabel id="num-questions-label">Select number of questions</InputLabel>
+            <Select
+              labelId="num-questions-label"
+              value={numQuestions}
+              label="Select number of questions"
+              onChange={(e) => setNumQuestions(e.target.value as number)}
+            >
+              <MenuItem value={0}>
+                Default (AI Decides)
+              </MenuItem>
+              {[5, 10, 15, 20].map((num) => (
+                <MenuItem key={num} value={num}>
+                  {num} Questions
                 </MenuItem>
               ))}
             </Select>

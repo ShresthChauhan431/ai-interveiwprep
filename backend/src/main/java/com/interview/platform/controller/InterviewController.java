@@ -18,6 +18,9 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import java.util.*;
 
 /**
@@ -42,7 +45,6 @@ import java.util.*;
  */
 @RestController
 @RequestMapping("/api/interviews")
-@CrossOrigin(origins = "http://localhost:3000")
 public class InterviewController {
 
     private static final Logger log = LoggerFactory.getLogger(InterviewController.class);
@@ -72,11 +74,11 @@ public class InterviewController {
             HttpServletRequest httpRequest) {
 
         Long userId = getUserIdFromRequest(httpRequest);
-        log.info("Starting interview — user: {}, resume: {}, jobRole: {}",
-                userId, request.getResumeId(), request.getJobRoleId());
+        log.info("Starting interview — user: {}, resume: {}, jobRole: {}, numQuestions: {}",
+                userId, request.getResumeId(), request.getJobRoleId(), request.getNumQuestions());
 
         InterviewDTO interview = interviewService.startInterview(
-                userId, request.getResumeId(), request.getJobRoleId());
+                userId, request.getResumeId(), request.getJobRoleId(), request.getNumQuestions());
 
         return new ResponseEntity<>(interview, HttpStatus.CREATED);
     }
@@ -270,7 +272,26 @@ public class InterviewController {
     }
 
     // ════════════════════════════════════════════════════════════════
-    // 8. GET /api/interviews/{interviewId}/feedback
+    // 8. DELETE /api/interviews/{interviewId}
+    // ════════════════════════════════════════════════════════════════
+
+    @DeleteMapping("/{interviewId}")
+    public ResponseEntity<Map<String, String>> deleteInterview(
+            @PathVariable Long interviewId,
+            HttpServletRequest httpRequest) {
+
+        Long userId = getUserIdFromRequest(httpRequest);
+        log.info("Deleting interview — user: {}, interview: {}", userId, interviewId);
+
+        interviewService.deleteInterview(interviewId, userId);
+
+        return ResponseEntity.ok(Map.of(
+                "message", "Interview deleted successfully",
+                "interviewId", String.valueOf(interviewId)));
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // 9. GET /api/interviews/{interviewId}/feedback
     // ════════════════════════════════════════════════════════════════
 
     @GetMapping("/{interviewId}/feedback")
@@ -293,9 +314,9 @@ public class InterviewController {
             Map<String, Object> feedbackResponse = new LinkedHashMap<>();
             feedbackResponse.put("status", "COMPLETED");
             feedbackResponse.put("overallScore", feedback.getOverallScore());
-            feedbackResponse.put("strengths", feedback.getStrengths());
-            feedbackResponse.put("weaknesses", feedback.getWeaknesses());
-            feedbackResponse.put("recommendations", feedback.getRecommendations());
+            feedbackResponse.put("strengths", parseFeedbackList(feedback.getStrengths()));
+            feedbackResponse.put("weaknesses", parseFeedbackList(feedback.getWeaknesses()));
+            feedbackResponse.put("recommendations", parseFeedbackList(feedback.getRecommendations()));
             feedbackResponse.put("detailedAnalysis", feedback.getDetailedAnalysis());
             feedbackResponse.put("generatedAt", feedback.getGeneratedAt());
 
@@ -366,5 +387,25 @@ public class InterviewController {
             throw new RuntimeException("User not authenticated");
         }
         return (Long) userIdAttr;
+    }
+
+    /**
+     * Parse stored feedback field (JSON array or plain text) to list for API.
+     * Frontend expects string[] for strengths, weaknesses, recommendations.
+     */
+    private static List<String> parseFeedbackList(String value) {
+        if (value == null || value.isBlank()) {
+            return Collections.emptyList();
+        }
+        String trimmed = value.trim();
+        if (trimmed.startsWith("[")) {
+            try {
+                return new ObjectMapper().readValue(trimmed, new TypeReference<List<String>>() {
+                });
+            } catch (Exception e) {
+                log.warn("Failed to parse feedback list as JSON, using as single item: {}", e.getMessage());
+            }
+        }
+        return Collections.singletonList(value);
     }
 }

@@ -33,7 +33,7 @@ import {
     TrendingDown,
     TrendingUp,
 } from '@mui/icons-material';
-import { InterviewDTO, InterviewQuestion, Response as InterviewResponse, Feedback } from '../../types';
+import { InterviewDTO, InterviewQuestion, Feedback, asFeedbackList } from '../../types';
 import { interviewService } from '../../services/interview.service';
 
 // Cast ReactPlayer to any to suppress "url" prop type error
@@ -82,7 +82,6 @@ const InterviewReview: React.FC<InterviewReviewProps> = ({ interviewId }) => {
 
     const [interview, setInterview] = useState<InterviewDTO | null>(null);
     const [questions, setQuestions] = useState<InterviewQuestion[]>([]);
-    const [responses, setResponses] = useState<InterviewResponse[]>([]);
     const [feedback, setFeedback] = useState<Feedback | null>(null);
     const [selectedQuestion, setSelectedQuestion] = useState<number | null>(null);
     const [isLoading, setIsLoading] = useState(true);
@@ -128,11 +127,6 @@ const InterviewReview: React.FC<InterviewReviewProps> = ({ interviewId }) => {
     // Helpers
     // ============================================================
 
-    const getResponseForQuestion = useCallback(
-        (questionId: number) => responses.find((r) => r.questionId === questionId),
-        [responses]
-    );
-
     const handleDownloadFeedback = useCallback(() => {
         if (!feedback || !interview) return;
 
@@ -142,13 +136,13 @@ const InterviewReview: React.FC<InterviewReviewProps> = ({ interviewId }) => {
             `Score: ${feedback.overallScore}/100`,
             '',
             '=== STRENGTHS ===',
-            ...feedback.strengths.map((s) => `• ${s}`),
+            ...asFeedbackList(feedback.strengths).map((s) => `• ${s}`),
             '',
             '=== AREAS FOR IMPROVEMENT ===',
-            ...feedback.weaknesses.map((w) => `• ${w}`),
+            ...asFeedbackList(feedback.weaknesses).map((w) => `• ${w}`),
             '',
             '=== RECOMMENDATIONS ===',
-            ...feedback.recommendations.map((r) => `• ${r}`),
+            ...asFeedbackList(feedback.recommendations).map((r) => `• ${r}`),
             '',
             '=== DETAILED ANALYSIS ===',
             feedback.detailedAnalysis,
@@ -278,7 +272,7 @@ const InterviewReview: React.FC<InterviewReviewProps> = ({ interviewId }) => {
                                     <Typography fontWeight={600}>Strengths</Typography>
                                 </Box>
                                 <List dense disablePadding>
-                                    {feedback.strengths.map((item, i) => (
+                                    {asFeedbackList(feedback.strengths).map((item, i) => (
                                         <ListItem key={i} disablePadding sx={{ py: 0.4 }}>
                                             <ListItemIcon sx={{ minWidth: 28 }}>
                                                 <Star sx={{ fontSize: 16, color: 'success.main' }} />
@@ -298,7 +292,7 @@ const InterviewReview: React.FC<InterviewReviewProps> = ({ interviewId }) => {
                                     <Typography fontWeight={600}>Areas for Improvement</Typography>
                                 </Box>
                                 <List dense disablePadding>
-                                    {feedback.weaknesses.map((item, i) => (
+                                    {asFeedbackList(feedback.weaknesses).map((item, i) => (
                                         <ListItem key={i} disablePadding sx={{ py: 0.4 }}>
                                             <ListItemIcon sx={{ minWidth: 28 }}>
                                                 <TrendingDown sx={{ fontSize: 16, color: 'error.main' }} />
@@ -318,7 +312,7 @@ const InterviewReview: React.FC<InterviewReviewProps> = ({ interviewId }) => {
                                     <Typography fontWeight={600}>Recommendations</Typography>
                                 </Box>
                                 <List dense disablePadding>
-                                    {feedback.recommendations.map((item, i) => (
+                                    {asFeedbackList(feedback.recommendations).map((item, i) => (
                                         <ListItem key={i} disablePadding sx={{ py: 0.4 }}>
                                             <ListItemIcon sx={{ minWidth: 28 }}>
                                                 <Lightbulb sx={{ fontSize: 16, color: 'warning.main' }} />
@@ -340,7 +334,7 @@ const InterviewReview: React.FC<InterviewReviewProps> = ({ interviewId }) => {
             {/* ===== Tab 1: Questions & Responses ===== */}
             <TabPanel value={activeTab} index={1}>
                 {questions.map((question, index) => {
-                    const response = getResponseForQuestion(question.questionId);
+                    const hasResponse = Boolean(question.responseVideoUrl);
 
                     return (
                         <Accordion
@@ -385,7 +379,7 @@ const InterviewReview: React.FC<InterviewReviewProps> = ({ interviewId }) => {
                                 <Divider sx={{ mb: 2 }} />
 
                                 {/* Video response */}
-                                {response ? (
+                                {hasResponse ? (
                                     <Box>
                                         <Typography variant="subtitle2" gutterBottom>
                                             Your Response
@@ -400,7 +394,7 @@ const InterviewReview: React.FC<InterviewReviewProps> = ({ interviewId }) => {
                                             onContextMenu={(e) => e.preventDefault()}
                                         >
                                             <Player
-                                                url={response.videoUrl}
+                                                url={question.responseVideoUrl!}
                                                 controls
                                                 width="100%"
                                                 height="auto"
@@ -408,7 +402,7 @@ const InterviewReview: React.FC<InterviewReviewProps> = ({ interviewId }) => {
                                         </Box>
 
                                         {/* Transcription */}
-                                        {response.transcription && (
+                                        {question.responseTranscription && (
                                             <Card
                                                 elevation={0}
                                                 sx={{
@@ -423,7 +417,7 @@ const InterviewReview: React.FC<InterviewReviewProps> = ({ interviewId }) => {
                                                         TRANSCRIPTION
                                                     </Typography>
                                                     <Typography variant="body2" sx={{ mt: 0.5, lineHeight: 1.6 }}>
-                                                        {response.transcription}
+                                                        {question.responseTranscription}
                                                     </Typography>
                                                 </CardContent>
                                             </Card>

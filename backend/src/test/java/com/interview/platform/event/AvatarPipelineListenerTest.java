@@ -27,456 +27,461 @@ import static org.mockito.Mockito.*;
 @DisplayName("AvatarPipelineListener Tests")
 class AvatarPipelineListenerTest {
 
-    @Mock
-    private QuestionRepository questionRepository;
+        @Mock
+        private QuestionRepository questionRepository;
 
-    @Mock
-    private InterviewRepository interviewRepository;
+        @Mock
+        private InterviewRepository interviewRepository;
 
-    @Mock
-    private CachedAvatarService cachedAvatarService;
+        @Mock
+        private CachedAvatarService cachedAvatarService;
 
-    @InjectMocks
-    private AvatarPipelineListener listener;
+        @Mock
+        private com.interview.platform.service.SseEmitterService sseEmitterService;
 
-    // ── Shared fixtures ─────────────────────────────────────────
+        @InjectMocks
+        private AvatarPipelineListener listener;
 
-    private Interview testInterview;
-    private Question question1;
-    private Question question2;
-    private Question question3;
+        // ── Shared fixtures ─────────────────────────────────────────
 
-    @BeforeEach
-    void setUp() {
-        testInterview = new Interview();
-        testInterview.setId(100L);
-        testInterview.setStatus(InterviewStatus.GENERATING_VIDEOS);
-        testInterview.setType(InterviewType.VIDEO);
+        private Interview testInterview;
+        private Question question1;
+        private Question question2;
+        private Question question3;
 
-        question1 = new Question();
-        question1.setId(201L);
-        question1.setInterview(testInterview);
-        question1.setQuestionText("Tell me about your experience with Spring Boot.");
-        question1.setQuestionNumber(1);
+        @BeforeEach
+        void setUp() {
+                testInterview = new Interview();
+                testInterview.setId(100L);
+                testInterview.setStatus(InterviewStatus.GENERATING_VIDEOS);
+                testInterview.setType(InterviewType.VIDEO);
 
-        question2 = new Question();
-        question2.setId(202L);
-        question2.setInterview(testInterview);
-        question2.setQuestionText("Describe a challenging project you worked on.");
-        question2.setQuestionNumber(2);
+                question1 = new Question();
+                question1.setId(201L);
+                question1.setInterview(testInterview);
+                question1.setQuestionText("Tell me about your experience with Spring Boot.");
+                question1.setQuestionNumber(1);
 
-        question3 = new Question();
-        question3.setId(203L);
-        question3.setInterview(testInterview);
-        question3.setQuestionText("What are your strengths as a developer?");
-        question3.setQuestionNumber(3);
-    }
+                question2 = new Question();
+                question2.setId(202L);
+                question2.setInterview(testInterview);
+                question2.setQuestionText("Describe a challenging project you worked on.");
+                question2.setQuestionNumber(2);
 
-    // ============================================================
-    // onQuestionsCreated — full pipeline
-    // ============================================================
-
-    @Nested
-    @DisplayName("onQuestionsCreated")
-    class OnQuestionsCreatedTests {
-
-        @Test
-        @DisplayName("Should process all questions and transition interview to IN_PROGRESS on success")
-        void testOnQuestionsCreated_AllSuccess() {
-            // Arrange
-            QuestionsCreatedEvent event = new QuestionsCreatedEvent(
-                    this, 100L, List.of(201L, 202L));
-
-            when(questionRepository.findById(201L)).thenReturn(Optional.of(question1));
-            when(questionRepository.findById(202L)).thenReturn(Optional.of(question2));
-            when(cachedAvatarService.getOrGenerateAvatar("Tell me about your experience with Spring Boot.", 201L))
-                    .thenReturn("avatar-cache/abc123.mp4");
-            when(cachedAvatarService.getOrGenerateAvatar("Describe a challenging project you worked on.", 202L))
-                    .thenReturn("avatar-cache/def456.mp4");
-            when(questionRepository.save(any(Question.class))).thenAnswer(i -> i.getArgument(0));
-            when(interviewRepository.findById(100L)).thenReturn(Optional.of(testInterview));
-            when(interviewRepository.save(any(Interview.class))).thenAnswer(i -> i.getArgument(0));
-
-            // Act
-            listener.onQuestionsCreated(event);
-
-            // Assert — both questions processed
-            verify(cachedAvatarService).getOrGenerateAvatar(
-                    "Tell me about your experience with Spring Boot.", 201L);
-            verify(cachedAvatarService).getOrGenerateAvatar(
-                    "Describe a challenging project you worked on.", 202L);
-            verify(questionRepository, times(2)).save(any(Question.class));
-
-            // Assert — interview transitioned to IN_PROGRESS
-            verify(interviewRepository).save(argThat(interview ->
-                    interview.getStatus() == InterviewStatus.IN_PROGRESS));
+                question3 = new Question();
+                question3.setId(203L);
+                question3.setInterview(testInterview);
+                question3.setQuestionText("What are your strengths as a developer?");
+                question3.setQuestionNumber(3);
         }
 
-        @Test
-        @DisplayName("Should continue processing remaining questions when one fails")
-        void testOnQuestionsCreated_PartialFailure() {
-            // Arrange — question 201 fails, 202 succeeds
-            QuestionsCreatedEvent event = new QuestionsCreatedEvent(
-                    this, 100L, List.of(201L, 202L));
+        // ============================================================
+        // onQuestionsCreated — full pipeline
+        // ============================================================
 
-            when(questionRepository.findById(201L)).thenReturn(Optional.of(question1));
-            when(questionRepository.findById(202L)).thenReturn(Optional.of(question2));
-            when(cachedAvatarService.getOrGenerateAvatar(eq("Tell me about your experience with Spring Boot."), eq(201L)))
-                    .thenThrow(new RuntimeException("D-ID API timeout"));
-            when(cachedAvatarService.getOrGenerateAvatar(eq("Describe a challenging project you worked on."), eq(202L)))
-                    .thenReturn("avatar-cache/def456.mp4");
-            when(questionRepository.save(any(Question.class))).thenAnswer(i -> i.getArgument(0));
-            when(interviewRepository.findById(100L)).thenReturn(Optional.of(testInterview));
-            when(interviewRepository.save(any(Interview.class))).thenAnswer(i -> i.getArgument(0));
+        @Nested
+        @DisplayName("onQuestionsCreated")
+        class OnQuestionsCreatedTests {
 
-            // Act — should NOT throw
-            assertThatCode(() -> listener.onQuestionsCreated(event))
-                    .doesNotThrowAnyException();
+                @Test
+                @DisplayName("Should process all questions and transition interview to IN_PROGRESS on success")
+                void testOnQuestionsCreated_AllSuccess() {
+                        // Arrange
+                        QuestionsCreatedEvent event = new QuestionsCreatedEvent(
+                                        this, 100L, List.of(201L, 202L));
 
-            // Assert — question 202 was still processed despite 201's failure
-            verify(cachedAvatarService).getOrGenerateAvatar(anyString(), eq(202L));
-            // Only question 202 should be saved (201 failed before save)
-            verify(questionRepository, times(1)).save(any(Question.class));
+                        when(questionRepository.findById(201L)).thenReturn(Optional.of(question1));
+                        when(questionRepository.findById(202L)).thenReturn(Optional.of(question2));
+                        when(cachedAvatarService.getOrGenerateAvatar("Tell me about your experience with Spring Boot.",
+                                        201L))
+                                        .thenReturn("avatar-cache/abc123.mp4");
+                        when(cachedAvatarService.getOrGenerateAvatar("Describe a challenging project you worked on.",
+                                        202L))
+                                        .thenReturn("avatar-cache/def456.mp4");
+                        when(questionRepository.save(any(Question.class))).thenAnswer(i -> i.getArgument(0));
+                        when(interviewRepository.findById(100L)).thenReturn(Optional.of(testInterview));
+                        when(interviewRepository.save(any(Interview.class))).thenAnswer(i -> i.getArgument(0));
 
-            // Assert — interview still transitions to IN_PROGRESS (partial success is OK)
-            verify(interviewRepository).save(argThat(interview ->
-                    interview.getStatus() == InterviewStatus.IN_PROGRESS));
+                        // Act
+                        listener.onQuestionsCreated(event);
+
+                        // Assert — both questions processed
+                        verify(cachedAvatarService).getOrGenerateAvatar(
+                                        "Tell me about your experience with Spring Boot.", 201L);
+                        verify(cachedAvatarService).getOrGenerateAvatar(
+                                        "Describe a challenging project you worked on.", 202L);
+                        verify(questionRepository, times(2)).save(any(Question.class));
+
+                        // Assert — interview transitioned to IN_PROGRESS
+                        verify(interviewRepository).save(
+                                        argThat(interview -> interview.getStatus() == InterviewStatus.IN_PROGRESS));
+                }
+
+                @Test
+                @DisplayName("Should continue processing remaining questions when one fails")
+                void testOnQuestionsCreated_PartialFailure() {
+                        // Arrange — question 201 fails, 202 succeeds
+                        QuestionsCreatedEvent event = new QuestionsCreatedEvent(
+                                        this, 100L, List.of(201L, 202L));
+
+                        when(questionRepository.findById(201L)).thenReturn(Optional.of(question1));
+                        when(questionRepository.findById(202L)).thenReturn(Optional.of(question2));
+                        when(cachedAvatarService.getOrGenerateAvatar(
+                                        eq("Tell me about your experience with Spring Boot."), eq(201L)))
+                                        .thenThrow(new RuntimeException("D-ID API timeout"));
+                        when(cachedAvatarService.getOrGenerateAvatar(
+                                        eq("Describe a challenging project you worked on."), eq(202L)))
+                                        .thenReturn("avatar-cache/def456.mp4");
+                        when(questionRepository.save(any(Question.class))).thenAnswer(i -> i.getArgument(0));
+                        when(interviewRepository.findById(100L)).thenReturn(Optional.of(testInterview));
+                        when(interviewRepository.save(any(Interview.class))).thenAnswer(i -> i.getArgument(0));
+
+                        // Act — should NOT throw
+                        assertThatCode(() -> listener.onQuestionsCreated(event))
+                                        .doesNotThrowAnyException();
+
+                        // Assert — question 202 was still processed despite 201's failure
+                        verify(cachedAvatarService).getOrGenerateAvatar(anyString(), eq(202L));
+                        // Only question 202 should be saved (201 failed before save)
+                        verify(questionRepository, times(1)).save(any(Question.class));
+
+                        // Assert — interview still transitions to IN_PROGRESS (partial success is OK)
+                        verify(interviewRepository).save(
+                                        argThat(interview -> interview.getStatus() == InterviewStatus.IN_PROGRESS));
+                }
+
+                @Test
+                @DisplayName("Should still transition to IN_PROGRESS when all questions fail")
+                void testOnQuestionsCreated_AllFail() {
+                        // Arrange — all questions fail
+                        QuestionsCreatedEvent event = new QuestionsCreatedEvent(
+                                        this, 100L, List.of(201L, 202L));
+
+                        when(questionRepository.findById(201L)).thenReturn(Optional.of(question1));
+                        when(questionRepository.findById(202L)).thenReturn(Optional.of(question2));
+                        when(cachedAvatarService.getOrGenerateAvatar(anyString(), anyLong()))
+                                        .thenThrow(new RuntimeException("Service unavailable"));
+                        when(interviewRepository.findById(100L)).thenReturn(Optional.of(testInterview));
+                        when(interviewRepository.save(any(Interview.class))).thenAnswer(i -> i.getArgument(0));
+
+                        // Act
+                        listener.onQuestionsCreated(event);
+
+                        // Assert — interview still transitions to IN_PROGRESS (text-only fallback)
+                        verify(interviewRepository).save(
+                                        argThat(interview -> interview.getStatus() == InterviewStatus.IN_PROGRESS));
+                        // No questions saved (all failed)
+                        verify(questionRepository, never()).save(any(Question.class));
+                }
+
+                @Test
+                @DisplayName("Should handle interview transition failure gracefully")
+                void testOnQuestionsCreated_TransitionFailure() {
+                        // Arrange — questions succeed but interview transition fails
+                        QuestionsCreatedEvent event = new QuestionsCreatedEvent(
+                                        this, 100L, List.of(201L));
+
+                        when(questionRepository.findById(201L)).thenReturn(Optional.of(question1));
+                        when(cachedAvatarService.getOrGenerateAvatar(anyString(), eq(201L)))
+                                        .thenReturn("avatar-cache/abc123.mp4");
+                        when(questionRepository.save(any(Question.class))).thenAnswer(i -> i.getArgument(0));
+                        when(interviewRepository.findById(100L))
+                                        .thenThrow(new RuntimeException("DB connection lost"));
+
+                        // Act — should NOT throw (recovery task will handle it)
+                        assertThatCode(() -> listener.onQuestionsCreated(event))
+                                        .doesNotThrowAnyException();
+
+                        // Assert — question was still processed
+                        verify(questionRepository).save(any(Question.class));
+                }
         }
 
-        @Test
-        @DisplayName("Should still transition to IN_PROGRESS when all questions fail")
-        void testOnQuestionsCreated_AllFail() {
-            // Arrange — all questions fail
-            QuestionsCreatedEvent event = new QuestionsCreatedEvent(
-                    this, 100L, List.of(201L, 202L));
+        // ============================================================
+        // processQuestion
+        // ============================================================
 
-            when(questionRepository.findById(201L)).thenReturn(Optional.of(question1));
-            when(questionRepository.findById(202L)).thenReturn(Optional.of(question2));
-            when(cachedAvatarService.getOrGenerateAvatar(anyString(), anyLong()))
-                    .thenThrow(new RuntimeException("Service unavailable"));
-            when(interviewRepository.findById(100L)).thenReturn(Optional.of(testInterview));
-            when(interviewRepository.save(any(Interview.class))).thenAnswer(i -> i.getArgument(0));
+        @Nested
+        @DisplayName("processQuestion")
+        class ProcessQuestionTests {
 
-            // Act
-            listener.onQuestionsCreated(event);
+                @Test
+                @DisplayName("Should generate avatar via CachedAvatarService and save S3 key to question")
+                void testProcessQuestion_Success() {
+                        // Arrange
+                        when(questionRepository.findById(201L)).thenReturn(Optional.of(question1));
+                        when(cachedAvatarService.getOrGenerateAvatar(
+                                        "Tell me about your experience with Spring Boot.", 201L))
+                                        .thenReturn("avatar-cache/abc123.mp4");
+                        when(questionRepository.save(any(Question.class))).thenAnswer(i -> i.getArgument(0));
 
-            // Assert — interview still transitions to IN_PROGRESS (text-only fallback)
-            verify(interviewRepository).save(argThat(interview ->
-                    interview.getStatus() == InterviewStatus.IN_PROGRESS));
-            // No questions saved (all failed)
-            verify(questionRepository, never()).save(any(Question.class));
+                        // Act
+                        listener.processQuestion(201L);
+
+                        // Assert
+                        verify(cachedAvatarService).getOrGenerateAvatar(
+                                        "Tell me about your experience with Spring Boot.", 201L);
+                        verify(questionRepository).save(argThat(
+                                        question -> "avatar-cache/abc123.mp4".equals(question.getAvatarVideoUrl())));
+                }
+
+                @Test
+                @DisplayName("Should skip processing when question already has avatar video (idempotency)")
+                void testProcessQuestion_AlreadyHasAvatar() {
+                        // Arrange — question already has an avatar video
+                        question1.setAvatarVideoUrl("avatar-cache/existing.mp4");
+                        when(questionRepository.findById(201L)).thenReturn(Optional.of(question1));
+
+                        // Act
+                        listener.processQuestion(201L);
+
+                        // Assert — should NOT call CachedAvatarService or save
+                        verify(cachedAvatarService, never()).getOrGenerateAvatar(anyString(), anyLong());
+                        verify(questionRepository, never()).save(any(Question.class));
+                }
+
+                @Test
+                @DisplayName("Should skip processing when avatar video URL is non-blank (legacy URL)")
+                void testProcessQuestion_AlreadyHasLegacyUrl() {
+                        // Arrange — question has a legacy HTTP URL
+                        question1.setAvatarVideoUrl("https://bucket.s3.amazonaws.com/old-video.mp4");
+                        when(questionRepository.findById(201L)).thenReturn(Optional.of(question1));
+
+                        // Act
+                        listener.processQuestion(201L);
+
+                        // Assert
+                        verify(cachedAvatarService, never()).getOrGenerateAvatar(anyString(), anyLong());
+                        verify(questionRepository, never()).save(any(Question.class));
+                }
+
+                @Test
+                @DisplayName("Should process question when avatarVideoUrl is blank string")
+                void testProcessQuestion_BlankAvatarUrl() {
+                        // Arrange — blank string is treated as absent
+                        question1.setAvatarVideoUrl("   ");
+                        when(questionRepository.findById(201L)).thenReturn(Optional.of(question1));
+                        when(cachedAvatarService.getOrGenerateAvatar(anyString(), eq(201L)))
+                                        .thenReturn("avatar-cache/new.mp4");
+                        when(questionRepository.save(any(Question.class))).thenAnswer(i -> i.getArgument(0));
+
+                        // Act
+                        listener.processQuestion(201L);
+
+                        // Assert — should generate and save
+                        verify(cachedAvatarService).getOrGenerateAvatar(anyString(), eq(201L));
+                        verify(questionRepository)
+                                        .save(argThat(q -> "avatar-cache/new.mp4".equals(q.getAvatarVideoUrl())));
+                }
+
+                @Test
+                @DisplayName("Should throw RuntimeException when question is not found")
+                void testProcessQuestion_QuestionNotFound() {
+                        when(questionRepository.findById(999L)).thenReturn(Optional.empty());
+
+                        assertThatThrownBy(() -> listener.processQuestion(999L))
+                                        .isInstanceOf(RuntimeException.class)
+                                        .hasMessageContaining("Question not found during avatar pipeline");
+                }
+
+                @Test
+                @DisplayName("Should propagate CachedAvatarService exceptions")
+                void testProcessQuestion_CachedAvatarServiceError() {
+                        when(questionRepository.findById(201L)).thenReturn(Optional.of(question1));
+                        when(cachedAvatarService.getOrGenerateAvatar(anyString(), eq(201L)))
+                                        .thenThrow(new RuntimeException("ElevenLabs rate limit exceeded"));
+
+                        assertThatThrownBy(() -> listener.processQuestion(201L))
+                                        .isInstanceOf(RuntimeException.class)
+                                        .hasMessageContaining("ElevenLabs rate limit exceeded");
+                }
         }
 
-        @Test
-        @DisplayName("Should handle interview transition failure gracefully")
-        void testOnQuestionsCreated_TransitionFailure() {
-            // Arrange — questions succeed but interview transition fails
-            QuestionsCreatedEvent event = new QuestionsCreatedEvent(
-                    this, 100L, List.of(201L));
+        // ============================================================
+        // transitionToInProgress
+        // ============================================================
 
-            when(questionRepository.findById(201L)).thenReturn(Optional.of(question1));
-            when(cachedAvatarService.getOrGenerateAvatar(anyString(), eq(201L)))
-                    .thenReturn("avatar-cache/abc123.mp4");
-            when(questionRepository.save(any(Question.class))).thenAnswer(i -> i.getArgument(0));
-            when(interviewRepository.findById(100L))
-                    .thenThrow(new RuntimeException("DB connection lost"));
+        @Nested
+        @DisplayName("transitionToInProgress")
+        class TransitionToInProgressTests {
 
-            // Act — should NOT throw (recovery task will handle it)
-            assertThatCode(() -> listener.onQuestionsCreated(event))
-                    .doesNotThrowAnyException();
+                @Test
+                @DisplayName("Should transition interview from GENERATING_VIDEOS to IN_PROGRESS")
+                void testTransition_Success() {
+                        testInterview.setStatus(InterviewStatus.GENERATING_VIDEOS);
+                        when(interviewRepository.findById(100L)).thenReturn(Optional.of(testInterview));
+                        when(interviewRepository.save(any(Interview.class))).thenAnswer(i -> i.getArgument(0));
 
-            // Assert — question was still processed
-            verify(questionRepository).save(any(Question.class));
-        }
-    }
+                        // Act
+                        listener.transitionToInProgress(100L);
 
-    // ============================================================
-    // processQuestion
-    // ============================================================
+                        // Assert
+                        verify(interviewRepository).save(
+                                        argThat(interview -> interview.getStatus() == InterviewStatus.IN_PROGRESS));
+                }
 
-    @Nested
-    @DisplayName("processQuestion")
-    class ProcessQuestionTests {
+                @Test
+                @DisplayName("Should be a no-op when interview is already IN_PROGRESS (recovery task already ran)")
+                void testTransition_AlreadyInProgress() {
+                        testInterview.setStatus(InterviewStatus.IN_PROGRESS);
+                        when(interviewRepository.findById(100L)).thenReturn(Optional.of(testInterview));
 
-        @Test
-        @DisplayName("Should generate avatar via CachedAvatarService and save S3 key to question")
-        void testProcessQuestion_Success() {
-            // Arrange
-            when(questionRepository.findById(201L)).thenReturn(Optional.of(question1));
-            when(cachedAvatarService.getOrGenerateAvatar(
-                    "Tell me about your experience with Spring Boot.", 201L))
-                    .thenReturn("avatar-cache/abc123.mp4");
-            when(questionRepository.save(any(Question.class))).thenAnswer(i -> i.getArgument(0));
+                        // Act
+                        listener.transitionToInProgress(100L);
 
-            // Act
-            listener.processQuestion(201L);
+                        // Assert — should NOT save (already in target state)
+                        verify(interviewRepository, never()).save(any(Interview.class));
+                }
 
-            // Assert
-            verify(cachedAvatarService).getOrGenerateAvatar(
-                    "Tell me about your experience with Spring Boot.", 201L);
-            verify(questionRepository).save(argThat(question ->
-                    "avatar-cache/abc123.mp4".equals(question.getAvatarVideoUrl())));
-        }
+                @Test
+                @DisplayName("Should be a no-op when interview status is COMPLETED")
+                void testTransition_AlreadyCompleted() {
+                        testInterview.setStatus(InterviewStatus.COMPLETED);
+                        when(interviewRepository.findById(100L)).thenReturn(Optional.of(testInterview));
 
-        @Test
-        @DisplayName("Should skip processing when question already has avatar video (idempotency)")
-        void testProcessQuestion_AlreadyHasAvatar() {
-            // Arrange — question already has an avatar video
-            question1.setAvatarVideoUrl("avatar-cache/existing.mp4");
-            when(questionRepository.findById(201L)).thenReturn(Optional.of(question1));
+                        // Act
+                        listener.transitionToInProgress(100L);
 
-            // Act
-            listener.processQuestion(201L);
+                        // Assert — should NOT save
+                        verify(interviewRepository, never()).save(any(Interview.class));
+                }
 
-            // Assert — should NOT call CachedAvatarService or save
-            verify(cachedAvatarService, never()).getOrGenerateAvatar(anyString(), anyLong());
-            verify(questionRepository, never()).save(any(Question.class));
-        }
+                @Test
+                @DisplayName("Should be a no-op when interview status is FAILED")
+                void testTransition_AlreadyFailed() {
+                        testInterview.setStatus(InterviewStatus.FAILED);
+                        when(interviewRepository.findById(100L)).thenReturn(Optional.of(testInterview));
 
-        @Test
-        @DisplayName("Should skip processing when avatar video URL is non-blank (legacy URL)")
-        void testProcessQuestion_AlreadyHasLegacyUrl() {
-            // Arrange — question has a legacy HTTP URL
-            question1.setAvatarVideoUrl("https://bucket.s3.amazonaws.com/old-video.mp4");
-            when(questionRepository.findById(201L)).thenReturn(Optional.of(question1));
+                        // Act
+                        listener.transitionToInProgress(100L);
 
-            // Act
-            listener.processQuestion(201L);
+                        // Assert — should NOT save
+                        verify(interviewRepository, never()).save(any(Interview.class));
+                }
 
-            // Assert
-            verify(cachedAvatarService, never()).getOrGenerateAvatar(anyString(), anyLong());
-            verify(questionRepository, never()).save(any(Question.class));
-        }
+                @Test
+                @DisplayName("Should be a no-op when interview status is PROCESSING")
+                void testTransition_AlreadyProcessing() {
+                        testInterview.setStatus(InterviewStatus.PROCESSING);
+                        when(interviewRepository.findById(100L)).thenReturn(Optional.of(testInterview));
 
-        @Test
-        @DisplayName("Should process question when avatarVideoUrl is blank string")
-        void testProcessQuestion_BlankAvatarUrl() {
-            // Arrange — blank string is treated as absent
-            question1.setAvatarVideoUrl("   ");
-            when(questionRepository.findById(201L)).thenReturn(Optional.of(question1));
-            when(cachedAvatarService.getOrGenerateAvatar(anyString(), eq(201L)))
-                    .thenReturn("avatar-cache/new.mp4");
-            when(questionRepository.save(any(Question.class))).thenAnswer(i -> i.getArgument(0));
+                        // Act
+                        listener.transitionToInProgress(100L);
 
-            // Act
-            listener.processQuestion(201L);
+                        // Assert — should NOT save
+                        verify(interviewRepository, never()).save(any(Interview.class));
+                }
 
-            // Assert — should generate and save
-            verify(cachedAvatarService).getOrGenerateAvatar(anyString(), eq(201L));
-            verify(questionRepository).save(argThat(q ->
-                    "avatar-cache/new.mp4".equals(q.getAvatarVideoUrl())));
+                @Test
+                @DisplayName("Should throw when interview is not found")
+                void testTransition_InterviewNotFound() {
+                        when(interviewRepository.findById(999L)).thenReturn(Optional.empty());
+
+                        assertThatThrownBy(() -> listener.transitionToInProgress(999L))
+                                        .isInstanceOf(RuntimeException.class)
+                                        .hasMessageContaining("Interview not found during avatar pipeline completion");
+                }
         }
 
-        @Test
-        @DisplayName("Should throw RuntimeException when question is not found")
-        void testProcessQuestion_QuestionNotFound() {
-            when(questionRepository.findById(999L)).thenReturn(Optional.empty());
+        // ============================================================
+        // Event integration — verifies event immutability / structure
+        // ============================================================
 
-            assertThatThrownBy(() -> listener.processQuestion(999L))
-                    .isInstanceOf(RuntimeException.class)
-                    .hasMessageContaining("Question not found during avatar pipeline");
+        @Nested
+        @DisplayName("QuestionsCreatedEvent integration")
+        class EventIntegrationTests {
+
+                @Test
+                @DisplayName("Should process questions in the order provided by the event")
+                void testProcessesQuestionsInOrder() {
+                        // Arrange — 3 questions
+                        QuestionsCreatedEvent event = new QuestionsCreatedEvent(
+                                        this, 100L, List.of(201L, 202L, 203L));
+
+                        when(questionRepository.findById(201L)).thenReturn(Optional.of(question1));
+                        when(questionRepository.findById(202L)).thenReturn(Optional.of(question2));
+                        when(questionRepository.findById(203L)).thenReturn(Optional.of(question3));
+                        when(cachedAvatarService.getOrGenerateAvatar(anyString(), anyLong()))
+                                        .thenReturn("avatar-cache/video.mp4");
+                        when(questionRepository.save(any(Question.class))).thenAnswer(i -> i.getArgument(0));
+                        when(interviewRepository.findById(100L)).thenReturn(Optional.of(testInterview));
+                        when(interviewRepository.save(any(Interview.class))).thenAnswer(i -> i.getArgument(0));
+
+                        // Act
+                        listener.onQuestionsCreated(event);
+
+                        // Assert — all 3 questions processed
+                        verify(cachedAvatarService, times(3)).getOrGenerateAvatar(anyString(), anyLong());
+                        verify(questionRepository, times(3)).save(any(Question.class));
+                        verify(interviewRepository).save(any(Interview.class));
+                }
+
+                @Test
+                @DisplayName("Should handle single-question event correctly")
+                void testSingleQuestion() {
+                        QuestionsCreatedEvent event = new QuestionsCreatedEvent(
+                                        this, 100L, List.of(201L));
+
+                        when(questionRepository.findById(201L)).thenReturn(Optional.of(question1));
+                        when(cachedAvatarService.getOrGenerateAvatar(anyString(), eq(201L)))
+                                        .thenReturn("avatar-cache/single.mp4");
+                        when(questionRepository.save(any(Question.class))).thenAnswer(i -> i.getArgument(0));
+                        when(interviewRepository.findById(100L)).thenReturn(Optional.of(testInterview));
+                        when(interviewRepository.save(any(Interview.class))).thenAnswer(i -> i.getArgument(0));
+
+                        // Act
+                        listener.onQuestionsCreated(event);
+
+                        // Assert
+                        verify(cachedAvatarService, times(1)).getOrGenerateAvatar(anyString(), anyLong());
+                        verify(interviewRepository).save(argThat(i -> i.getStatus() == InterviewStatus.IN_PROGRESS));
+                }
         }
 
-        @Test
-        @DisplayName("Should propagate CachedAvatarService exceptions")
-        void testProcessQuestion_CachedAvatarServiceError() {
-            when(questionRepository.findById(201L)).thenReturn(Optional.of(question1));
-            when(cachedAvatarService.getOrGenerateAvatar(anyString(), eq(201L)))
-                    .thenThrow(new RuntimeException("ElevenLabs rate limit exceeded"));
+        // ============================================================
+        // Edge cases
+        // ============================================================
 
-            assertThatThrownBy(() -> listener.processQuestion(201L))
-                    .isInstanceOf(RuntimeException.class)
-                    .hasMessageContaining("ElevenLabs rate limit exceeded");
+        @Nested
+        @DisplayName("Edge cases")
+        class EdgeCaseTests {
+
+                @Test
+                @DisplayName("Should handle question not found during pipeline gracefully in onQuestionsCreated")
+                void testQuestionNotFoundDuringPipeline() {
+                        QuestionsCreatedEvent event = new QuestionsCreatedEvent(
+                                        this, 100L, List.of(201L, 999L));
+
+                        when(questionRepository.findById(201L)).thenReturn(Optional.of(question1));
+                        when(questionRepository.findById(999L)).thenReturn(Optional.empty());
+                        when(cachedAvatarService.getOrGenerateAvatar(anyString(), eq(201L)))
+                                        .thenReturn("avatar-cache/abc.mp4");
+                        when(questionRepository.save(any(Question.class))).thenAnswer(i -> i.getArgument(0));
+                        when(interviewRepository.findById(100L)).thenReturn(Optional.of(testInterview));
+                        when(interviewRepository.save(any(Interview.class))).thenAnswer(i -> i.getArgument(0));
+
+                        // Act — should NOT throw (question 999 fails, but 201 succeeds)
+                        assertThatCode(() -> listener.onQuestionsCreated(event))
+                                        .doesNotThrowAnyException();
+
+                        // Assert — question 201 was processed, interview transitioned
+                        verify(questionRepository, times(1)).save(any(Question.class));
+                        verify(interviewRepository).save(argThat(i -> i.getStatus() == InterviewStatus.IN_PROGRESS));
+                }
+
+                @Test
+                @DisplayName("Should handle CachedAvatarService returning null S3 key")
+                void testNullS3KeyFromCachedAvatarService() {
+                        when(questionRepository.findById(201L)).thenReturn(Optional.of(question1));
+                        when(cachedAvatarService.getOrGenerateAvatar(anyString(), eq(201L)))
+                                        .thenReturn(null);
+                        when(questionRepository.save(any(Question.class))).thenAnswer(i -> i.getArgument(0));
+
+                        // Act
+                        listener.processQuestion(201L);
+
+                        // Assert — saves with null (frontend will show text-only fallback)
+                        verify(questionRepository).save(argThat(q -> q.getAvatarVideoUrl() == null));
+                }
         }
-    }
-
-    // ============================================================
-    // transitionToInProgress
-    // ============================================================
-
-    @Nested
-    @DisplayName("transitionToInProgress")
-    class TransitionToInProgressTests {
-
-        @Test
-        @DisplayName("Should transition interview from GENERATING_VIDEOS to IN_PROGRESS")
-        void testTransition_Success() {
-            testInterview.setStatus(InterviewStatus.GENERATING_VIDEOS);
-            when(interviewRepository.findById(100L)).thenReturn(Optional.of(testInterview));
-            when(interviewRepository.save(any(Interview.class))).thenAnswer(i -> i.getArgument(0));
-
-            // Act
-            listener.transitionToInProgress(100L);
-
-            // Assert
-            verify(interviewRepository).save(argThat(interview ->
-                    interview.getStatus() == InterviewStatus.IN_PROGRESS));
-        }
-
-        @Test
-        @DisplayName("Should be a no-op when interview is already IN_PROGRESS (recovery task already ran)")
-        void testTransition_AlreadyInProgress() {
-            testInterview.setStatus(InterviewStatus.IN_PROGRESS);
-            when(interviewRepository.findById(100L)).thenReturn(Optional.of(testInterview));
-
-            // Act
-            listener.transitionToInProgress(100L);
-
-            // Assert — should NOT save (already in target state)
-            verify(interviewRepository, never()).save(any(Interview.class));
-        }
-
-        @Test
-        @DisplayName("Should be a no-op when interview status is COMPLETED")
-        void testTransition_AlreadyCompleted() {
-            testInterview.setStatus(InterviewStatus.COMPLETED);
-            when(interviewRepository.findById(100L)).thenReturn(Optional.of(testInterview));
-
-            // Act
-            listener.transitionToInProgress(100L);
-
-            // Assert — should NOT save
-            verify(interviewRepository, never()).save(any(Interview.class));
-        }
-
-        @Test
-        @DisplayName("Should be a no-op when interview status is FAILED")
-        void testTransition_AlreadyFailed() {
-            testInterview.setStatus(InterviewStatus.FAILED);
-            when(interviewRepository.findById(100L)).thenReturn(Optional.of(testInterview));
-
-            // Act
-            listener.transitionToInProgress(100L);
-
-            // Assert — should NOT save
-            verify(interviewRepository, never()).save(any(Interview.class));
-        }
-
-        @Test
-        @DisplayName("Should be a no-op when interview status is PROCESSING")
-        void testTransition_AlreadyProcessing() {
-            testInterview.setStatus(InterviewStatus.PROCESSING);
-            when(interviewRepository.findById(100L)).thenReturn(Optional.of(testInterview));
-
-            // Act
-            listener.transitionToInProgress(100L);
-
-            // Assert — should NOT save
-            verify(interviewRepository, never()).save(any(Interview.class));
-        }
-
-        @Test
-        @DisplayName("Should throw when interview is not found")
-        void testTransition_InterviewNotFound() {
-            when(interviewRepository.findById(999L)).thenReturn(Optional.empty());
-
-            assertThatThrownBy(() -> listener.transitionToInProgress(999L))
-                    .isInstanceOf(RuntimeException.class)
-                    .hasMessageContaining("Interview not found during avatar pipeline completion");
-        }
-    }
-
-    // ============================================================
-    // Event integration — verifies event immutability / structure
-    // ============================================================
-
-    @Nested
-    @DisplayName("QuestionsCreatedEvent integration")
-    class EventIntegrationTests {
-
-        @Test
-        @DisplayName("Should process questions in the order provided by the event")
-        void testProcessesQuestionsInOrder() {
-            // Arrange — 3 questions
-            QuestionsCreatedEvent event = new QuestionsCreatedEvent(
-                    this, 100L, List.of(201L, 202L, 203L));
-
-            when(questionRepository.findById(201L)).thenReturn(Optional.of(question1));
-            when(questionRepository.findById(202L)).thenReturn(Optional.of(question2));
-            when(questionRepository.findById(203L)).thenReturn(Optional.of(question3));
-            when(cachedAvatarService.getOrGenerateAvatar(anyString(), anyLong()))
-                    .thenReturn("avatar-cache/video.mp4");
-            when(questionRepository.save(any(Question.class))).thenAnswer(i -> i.getArgument(0));
-            when(interviewRepository.findById(100L)).thenReturn(Optional.of(testInterview));
-            when(interviewRepository.save(any(Interview.class))).thenAnswer(i -> i.getArgument(0));
-
-            // Act
-            listener.onQuestionsCreated(event);
-
-            // Assert — all 3 questions processed
-            verify(cachedAvatarService, times(3)).getOrGenerateAvatar(anyString(), anyLong());
-            verify(questionRepository, times(3)).save(any(Question.class));
-            verify(interviewRepository).save(any(Interview.class));
-        }
-
-        @Test
-        @DisplayName("Should handle single-question event correctly")
-        void testSingleQuestion() {
-            QuestionsCreatedEvent event = new QuestionsCreatedEvent(
-                    this, 100L, List.of(201L));
-
-            when(questionRepository.findById(201L)).thenReturn(Optional.of(question1));
-            when(cachedAvatarService.getOrGenerateAvatar(anyString(), eq(201L)))
-                    .thenReturn("avatar-cache/single.mp4");
-            when(questionRepository.save(any(Question.class))).thenAnswer(i -> i.getArgument(0));
-            when(interviewRepository.findById(100L)).thenReturn(Optional.of(testInterview));
-            when(interviewRepository.save(any(Interview.class))).thenAnswer(i -> i.getArgument(0));
-
-            // Act
-            listener.onQuestionsCreated(event);
-
-            // Assert
-            verify(cachedAvatarService, times(1)).getOrGenerateAvatar(anyString(), anyLong());
-            verify(interviewRepository).save(argThat(i ->
-                    i.getStatus() == InterviewStatus.IN_PROGRESS));
-        }
-    }
-
-    // ============================================================
-    // Edge cases
-    // ============================================================
-
-    @Nested
-    @DisplayName("Edge cases")
-    class EdgeCaseTests {
-
-        @Test
-        @DisplayName("Should handle question not found during pipeline gracefully in onQuestionsCreated")
-        void testQuestionNotFoundDuringPipeline() {
-            QuestionsCreatedEvent event = new QuestionsCreatedEvent(
-                    this, 100L, List.of(201L, 999L));
-
-            when(questionRepository.findById(201L)).thenReturn(Optional.of(question1));
-            when(questionRepository.findById(999L)).thenReturn(Optional.empty());
-            when(cachedAvatarService.getOrGenerateAvatar(anyString(), eq(201L)))
-                    .thenReturn("avatar-cache/abc.mp4");
-            when(questionRepository.save(any(Question.class))).thenAnswer(i -> i.getArgument(0));
-            when(interviewRepository.findById(100L)).thenReturn(Optional.of(testInterview));
-            when(interviewRepository.save(any(Interview.class))).thenAnswer(i -> i.getArgument(0));
-
-            // Act — should NOT throw (question 999 fails, but 201 succeeds)
-            assertThatCode(() -> listener.onQuestionsCreated(event))
-                    .doesNotThrowAnyException();
-
-            // Assert — question 201 was processed, interview transitioned
-            verify(questionRepository, times(1)).save(any(Question.class));
-            verify(interviewRepository).save(argThat(i ->
-                    i.getStatus() == InterviewStatus.IN_PROGRESS));
-        }
-
-        @Test
-        @DisplayName("Should handle CachedAvatarService returning null S3 key")
-        void testNullS3KeyFromCachedAvatarService() {
-            when(questionRepository.findById(201L)).thenReturn(Optional.of(question1));
-            when(cachedAvatarService.getOrGenerateAvatar(anyString(), eq(201L)))
-                    .thenReturn(null);
-            when(questionRepository.save(any(Question.class))).thenAnswer(i -> i.getArgument(0));
-
-            // Act
-            listener.processQuestion(201L);
-
-            // Assert — saves with null (frontend will show text-only fallback)
-            verify(questionRepository).save(argThat(q -> q.getAvatarVideoUrl() == null));
-        }
-    }
 }

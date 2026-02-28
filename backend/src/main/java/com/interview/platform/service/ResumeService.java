@@ -83,7 +83,8 @@ public class ResumeService {
 
     public ResumeResponse getLatestResume(Long userId) {
         Resume resume = resumeRepository.findLatestByUserId(userId)
-                .orElseThrow(() -> new RuntimeException("No resume found for user"));
+                .orElseThrow(() -> new com.interview.platform.exception.ResourceNotFoundException(
+                        "No resume found for user"));
 
         return buildResumeResponse(resume);
     }

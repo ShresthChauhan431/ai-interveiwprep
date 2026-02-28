@@ -53,8 +53,9 @@ api.interceptors.response.use(
 
         switch (status) {
             case 401:
-                // Unauthorized — clear token and redirect to login
+                // Unauthorized — clear token, notify auth context, redirect to login
                 removeAuthToken();
+                window.dispatchEvent(new CustomEvent('auth:logout'));
                 window.location.href = '/login';
                 break;
 

@@ -26,51 +26,57 @@ import java.util.concurrent.CompletableFuture;
  * Service for transcribing video/audio files using the AssemblyAI API.
  *
  * <h3>Purpose:</h3>
- * <p>Converts user video responses into text transcriptions using AssemblyAI's
+ * <p>
+ * Converts user video responses into text transcriptions using AssemblyAI's
  * speech-to-text API. Transcriptions are used by the AI feedback service to
  * evaluate interview responses. The service handles the full async lifecycle:
  * submitting a transcription job, polling for completion, and persisting the
- * result to the database.</p>
+ * result to the database.
+ * </p>
  *
  * <h3>P1 Changes:</h3>
  * <ul>
- *   <li><strong>Resilience4j:</strong> The manual retry loop for the transcription
- *       job submission ({@code POST /v2/transcript}) has been replaced with
- *       programmatic Resilience4j {@link Retry} and {@link CircuitBreaker}
- *       decorators. This provides configurable exponential backoff, circuit
- *       breaker protection against sustained AssemblyAI outages, and observable
- *       metrics via the actuator.</li>
- *   <li><strong>Polling loops unchanged:</strong> The {@code pollForTranscription}
- *       method is NOT wrapped with Resilience4j because it is checking async
- *       job status ("queued" / "processing" → "completed"), not retrying a
- *       failed operation. Treating "not ready yet" as a failure would exhaust
- *       retry attempts incorrectly.</li>
- *   <li><strong>S3 presigned URL generation:</strong> When called with an S3 key
- *       (P1 storage model), the service generates a presigned GET URL with
- *       sufficient validity (60 minutes) for AssemblyAI to download and
- *       process the audio. This replaces the previous approach of passing
- *       pre-generated presigned URLs that could expire during long-running
- *       transcription jobs.</li>
- *   <li><strong>SLF4J logging:</strong> Migrated from {@code java.util.logging}
- *       to SLF4J for structured, parameterized logging consistent with the
- *       rest of the application.</li>
+ * <li><strong>Resilience4j:</strong> The manual retry loop for the
+ * transcription
+ * job submission ({@code POST /v2/transcript}) has been replaced with
+ * programmatic Resilience4j {@link Retry} and {@link CircuitBreaker}
+ * decorators. This provides configurable exponential backoff, circuit
+ * breaker protection against sustained AssemblyAI outages, and observable
+ * metrics via the actuator.</li>
+ * <li><strong>Polling loops unchanged:</strong> The
+ * {@code pollForTranscription}
+ * method is NOT wrapped with Resilience4j because it is checking async
+ * job status ("queued" / "processing" → "completed"), not retrying a
+ * failed operation. Treating "not ready yet" as a failure would exhaust
+ * retry attempts incorrectly.</li>
+ * <li><strong>S3 presigned URL generation:</strong> When called with an S3 key
+ * (P1 storage model), the service generates a presigned GET URL with
+ * sufficient validity (60 minutes) for AssemblyAI to download and
+ * process the audio. This replaces the previous approach of passing
+ * pre-generated presigned URLs that could expire during long-running
+ * transcription jobs.</li>
+ * <li><strong>SLF4J logging:</strong> Migrated from {@code java.util.logging}
+ * to SLF4J for structured, parameterized logging consistent with the
+ * rest of the application.</li>
  * </ul>
  *
  * <h3>AssemblyAI API Flow:</h3>
  * <ol>
- *   <li>Submit a transcription job via {@code POST /v2/transcript} with the
- *       audio URL. AssemblyAI returns a transcript ID.</li>
- *   <li>Poll {@code GET /v2/transcript/{id}} at regular intervals until the
- *       status transitions from "queued"/"processing" to "completed" or "error".</li>
- *   <li>Extract the transcription text and confidence score from the completed
- *       response.</li>
+ * <li>Submit a transcription job via {@code POST /v2/transcript} with the
+ * audio URL. AssemblyAI returns a transcript ID.</li>
+ * <li>Poll {@code GET /v2/transcript/{id}} at regular intervals until the
+ * status transitions from "queued"/"processing" to "completed" or "error".</li>
+ * <li>Extract the transcription text and confidence score from the completed
+ * response.</li>
  * </ol>
  *
  * <h3>Thread Model:</h3>
- * <p>The {@link #transcribeVideoAsync} method runs on a virtual thread via
+ * <p>
+ * The {@link #transcribeVideoAsync} method runs on a virtual thread via
  * {@code @Async("avatarTaskExecutor")}. The blocking {@code Thread.sleep()}
  * calls in the polling loop yield the virtual thread's carrier thread back
- * to the pool, making this efficient for concurrent transcription operations.</p>
+ * to the pool, making this efficient for concurrent transcription operations.
+ * </p>
  *
  * @see VideoStorageService
  * @see com.interview.platform.config.ResilienceConfig
@@ -107,11 +113,11 @@ public class SpeechToTextService {
     private String apiBaseUrl;
 
     public SpeechToTextService(RestTemplate restTemplate,
-                               ObjectMapper objectMapper,
-                               ResponseRepository responseRepository,
-                               VideoStorageService videoStorageService,
-                               @Qualifier("assemblyaiRetry") Retry assemblyaiRetry,
-                               @Qualifier("assemblyaiCircuitBreaker") CircuitBreaker assemblyaiCircuitBreaker) {
+            ObjectMapper objectMapper,
+            ResponseRepository responseRepository,
+            VideoStorageService videoStorageService,
+            @Qualifier("assemblyaiRetry") Retry assemblyaiRetry,
+            @Qualifier("assemblyaiCircuitBreaker") CircuitBreaker assemblyaiCircuitBreaker) {
         this.restTemplate = restTemplate;
         this.objectMapper = objectMapper;
         this.responseRepository = responseRepository;
@@ -127,11 +133,13 @@ public class SpeechToTextService {
     /**
      * Transcribe a video/audio file from an S3 key or URL (synchronous).
      *
-     * <p>If the provided {@code videoUrlOrKey} looks like an S3 key (does not
+     * <p>
+     * If the provided {@code videoUrlOrKey} looks like an S3 key (does not
      * start with "http"), a presigned GET URL is generated with 60-minute
      * validity so AssemblyAI can download the file. If it already starts
      * with "http", it is used as-is (backward compatibility with legacy
-     * presigned URLs still stored in the database).</p>
+     * presigned URLs still stored in the database).
+     * </p>
      *
      * @param videoUrlOrKey the S3 key or publicly accessible URL of the media file
      * @return TranscriptionResult with text and confidence
@@ -158,14 +166,18 @@ public class SpeechToTextService {
     /**
      * Async transcription that also persists the result to the Response entity.
      *
-     * <p>Runs on a virtual thread via {@code @Async("avatarTaskExecutor")}.
+     * <p>
+     * Runs on a virtual thread via {@code @Async("avatarTaskExecutor")}.
      * After transcription completes, the text and confidence score are
      * saved to the {@link Response} entity associated with the given
-     * question ID.</p>
+     * question ID.
+     * </p>
      *
-     * <p>If the Response entity is not found (e.g., it was deleted between
+     * <p>
+     * If the Response entity is not found (e.g., it was deleted between
      * upload and transcription), the transcription result is logged but
-     * not persisted. This is a non-fatal condition.</p>
+     * not persisted. This is a non-fatal condition.
+     * </p>
      *
      * @param videoUrlOrKey the S3 key or URL of the video to transcribe
      * @param questionId    the question ID to look up the Response entity
@@ -206,13 +218,17 @@ public class SpeechToTextService {
     /**
      * Resolve an S3 key or URL to an accessible URL for AssemblyAI.
      *
-     * <p>If the input looks like an S3 key (does not start with "http"),
+     * <p>
+     * If the input looks like an S3 key (does not start with "http"),
      * generates a presigned GET URL with 60-minute validity. Otherwise,
-     * returns the input as-is (it's already a URL).</p>
+     * returns the input as-is (it's already a URL).
+     * </p>
      *
-     * <p>60 minutes provides sufficient time for AssemblyAI to download
+     * <p>
+     * 60 minutes provides sufficient time for AssemblyAI to download
      * and process the audio file, even for longer recordings or during
-     * periods of high API load.</p>
+     * periods of high API load.
+     * </p>
      *
      * @param videoUrlOrKey the S3 key or URL
      * @return an accessible URL suitable for the AssemblyAI audio_url parameter
@@ -241,20 +257,31 @@ public class SpeechToTextService {
      * Submit a transcription job to AssemblyAI with Resilience4j retry
      * and circuit breaker.
      *
-     * <p>Replaces the previous manual retry loop. The retry configuration
+     * <p>
+     * Replaces the previous manual retry loop. The retry configuration
      * (max attempts, backoff, retryable exceptions) is defined in
      * {@link com.interview.platform.config.ResilienceConfig} and can be
-     * tuned via application.properties.</p>
+     * tuned via application.properties.
+     * </p>
      *
-     * <p>The circuit breaker tracks the failure rate of AssemblyAI job
+     * <p>
+     * The circuit breaker tracks the failure rate of AssemblyAI job
      * submission calls. If the rate exceeds the configured threshold,
-     * subsequent calls fail fast without making HTTP requests.</p>
+     * subsequent calls fail fast without making HTTP requests.
+     * </p>
      *
      * @param audioUrl the publicly accessible URL of the audio/video file
      * @return the AssemblyAI transcript ID
      * @throws RuntimeException if all retries are exhausted or the circuit is open
      */
     private String submitTranscriptionJobWithResilience(String audioUrl) {
+        // --- MOCK API FALLBACK ---
+        if (apiKey != null && apiKey.startsWith("mock")) {
+            log.info("Mock AssemblyAI API key detected. Returning dummy transcript ID.");
+            return "mock-transcript-id-" + System.currentTimeMillis();
+        }
+        // -------------------------
+
         return Decorators.ofSupplier(() -> callSubmitTranscription(audioUrl))
                 .withRetry(assemblyaiRetry)
                 .withCircuitBreaker(assemblyaiCircuitBreaker)
@@ -265,9 +292,11 @@ public class SpeechToTextService {
     /**
      * Make the actual HTTP POST to AssemblyAI {@code /v2/transcript} endpoint.
      *
-     * <p>This is the "raw" API call without any retry or circuit breaker
+     * <p>
+     * This is the "raw" API call without any retry or circuit breaker
      * logic. It is wrapped by {@link #submitTranscriptionJobWithResilience}
-     * which handles resilience concerns.</p>
+     * which handles resilience concerns.
+     * </p>
      *
      * @param audioUrl the publicly accessible URL of the audio/video file
      * @return the AssemblyAI transcript ID
@@ -316,25 +345,38 @@ public class SpeechToTextService {
      * Poll AssemblyAI {@code /v2/transcript/{id}} until the transcription
      * is complete.
      *
-     * <p><strong>This is NOT wrapped with Resilience4j retry.</strong>
+     * <p>
+     * <strong>This is NOT wrapped with Resilience4j retry.</strong>
      * Polling for async job completion is fundamentally different from
      * retrying a failed API call. A "queued" or "processing" status is
      * not a failure — it means the job is still in progress. Wrapping
      * this with Retry would incorrectly treat "not ready yet" as a
-     * failure and exhaust retry attempts.</p>
+     * failure and exhaust retry attempts.
+     * </p>
      *
-     * <p>The polling loop has its own timeout:
-     * {@code MAX_POLL_RETRIES * POLL_INTERVAL_MS = 60 * 3000ms = 3 minutes}.</p>
+     * <p>
+     * The polling loop has its own timeout:
+     * {@code MAX_POLL_RETRIES * POLL_INTERVAL_MS = 60 * 3000ms = 3 minutes}.
+     * </p>
      *
-     * <p>Individual poll HTTP requests are lightweight GET calls. If a single
+     * <p>
+     * Individual poll HTTP requests are lightweight GET calls. If a single
      * poll request fails with a transient error, the loop continues to the
-     * next iteration (with a sleep interval), providing implicit retry.</p>
+     * next iteration (with a sleep interval), providing implicit retry.
+     * </p>
      *
      * @param transcriptId the AssemblyAI transcript ID
      * @return TranscriptionResult with text and confidence
      * @throws RuntimeException if the transcription fails or times out
      */
     private TranscriptionResult pollForTranscription(String transcriptId) {
+        // --- MOCK API FALLBACK ---
+        if (apiKey != null && apiKey.startsWith("mock") && transcriptId.startsWith("mock-transcript-id")) {
+            log.info("Mock AssemblyAI API key detected. Simulating immediate transcription completion.");
+            return new TranscriptionResult("This is a mock transcription of the user's answer.", 0.99);
+        }
+        // -------------------------
+
         String url = apiBaseUrl + "/transcript/" + transcriptId;
         HttpHeaders headers = buildHeaders();
         HttpEntity<Void> entity = new HttpEntity<>(headers);
@@ -401,8 +443,10 @@ public class SpeechToTextService {
     /**
      * Build HTTP headers for AssemblyAI API requests.
      *
-     * <p>AssemblyAI uses a simple API key passed in the {@code Authorization}
-     * header (not Bearer token format — just the raw key).</p>
+     * <p>
+     * AssemblyAI uses a simple API key passed in the {@code Authorization}
+     * header (not Bearer token format — just the raw key).
+     * </p>
      *
      * @return configured HttpHeaders
      */
@@ -417,8 +461,10 @@ public class SpeechToTextService {
     /**
      * Sleep helper that handles InterruptedException correctly.
      *
-     * <p>On virtual threads, {@code Thread.sleep()} yields the carrier thread
-     * back to the pool, making this efficient for concurrent polling operations.</p>
+     * <p>
+     * On virtual threads, {@code Thread.sleep()} yields the carrier thread
+     * back to the pool, making this efficient for concurrent polling operations.
+     * </p>
      *
      * @param millis milliseconds to sleep
      * @throws RuntimeException if the thread is interrupted

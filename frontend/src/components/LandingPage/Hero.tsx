@@ -65,19 +65,19 @@ const Hero: React.FC = () => {
                     {/* Text Content */}
                     <Box sx={{ flex: 1, textAlign: { xs: 'center', md: 'left' } }}>
                         <Box
-                           sx={{
-                               display: 'inline-flex',
-                               alignItems: 'center',
-                               gap: 1,
-                               px: 2,
-                               py: 0.5,
-                               mb: 3,
-                               borderRadius: 50,
-                               bgcolor: theme.palette.mode === 'light' ? 'rgba(25, 118, 210, 0.1)' : 'rgba(25, 118, 210, 0.2)',
-                               color: 'primary.main',
-                               fontWeight: 600,
-                               fontSize: '0.875rem'
-                           }}
+                            sx={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 1,
+                                px: 2,
+                                py: 0.5,
+                                mb: 3,
+                                borderRadius: 50,
+                                bgcolor: theme.palette.mode === 'light' ? 'rgba(25, 118, 210, 0.1)' : 'rgba(25, 118, 210, 0.2)',
+                                color: 'primary.main',
+                                fontWeight: 600,
+                                fontSize: '0.875rem'
+                            }}
                         >
                             <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: 'primary.main' }} />
                             New: AI Voice Analysis
@@ -145,6 +145,7 @@ const Hero: React.FC = () => {
                                 variant="text"
                                 size="large"
                                 startIcon={<PlayCircleOutlineIcon />}
+                                onClick={() => navigate('/login')}
                                 sx={{
                                     px: 4,
                                     fontSize: '1.1rem',
@@ -240,7 +241,7 @@ const Hero: React.FC = () => {
                                         <Typography variant="h6" fontWeight={700} gutterBottom>
                                             Strong Communication
                                         </Typography>
-                                        
+
                                         <Stack spacing={2} sx={{ mt: 2 }}>
                                             <Box>
                                                 <Stack direction="row" justifyContent="space-between" sx={{ mb: 0.5 }}>

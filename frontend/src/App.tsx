@@ -12,6 +12,7 @@ import InterviewStart from './components/Interview/InterviewStart';
 import InterviewRoom from './components/Interview/InterviewRoom';
 import InterviewComplete from './components/Interview/InterviewComplete';
 import InterviewReview from './components/Interview/InterviewReview';
+import InterviewHistoryPage from './components/Interview/InterviewHistoryPage';
 import Navigation from './components/Common/Navigation';
 import LandingPage from './components/LandingPage/LandingPage';
 
@@ -227,7 +228,7 @@ const App: React.FC = () => {
             <Route path="/interview/:interviewId/complete" element={<ProtectedRoute><InterviewCompletePage /></ProtectedRoute>} />
             <Route path="/interview/:interviewId/review" element={<ProtectedRoute><InterviewReviewPage /></ProtectedRoute>} />
             <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
-            <Route path="/history" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+            <Route path="/history" element={<ProtectedRoute><InterviewHistoryPage /></ProtectedRoute>} />
 
             {/* 404 */}
             <Route path="*" element={<NotFoundPage />} />

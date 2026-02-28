@@ -82,6 +82,8 @@ export interface InterviewQuestion {
   difficulty: string;
   avatarVideoUrl: string | null;
   answered: boolean;
+  responseVideoUrl?: string | null;
+  responseTranscription?: string | null;
 }
 
 export interface Question {
@@ -104,6 +106,7 @@ export interface Response {
 export interface StartInterviewRequest {
   resumeId: number;
   jobRoleId: number;
+  numQuestions?: number;
 }
 
 export interface InterviewStartResponse {
@@ -244,4 +247,15 @@ export interface ApiError {
   message: string;
   status: number;
   timestamp: string;
+}
+
+// ============================================================
+// Helpers for API response normalization
+// ============================================================
+
+/** Normalize feedback list field (backend may return string or string[]). */
+export function asFeedbackList(v: string | string[] | undefined): string[] {
+  if (Array.isArray(v)) return v;
+  if (typeof v === "string") return v.trim() ? [v] : [];
+  return [];
 }

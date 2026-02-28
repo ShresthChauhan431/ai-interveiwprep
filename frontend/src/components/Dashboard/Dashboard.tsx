@@ -9,6 +9,7 @@ import {
     Chip,
     Container,
     FormControl,
+    IconButton,
     InputLabel,
     MenuItem,
     Select,
@@ -22,6 +23,7 @@ import {
     CalendarToday,
     CheckCircle,
     CloudUpload,
+    Delete,
     Description,
     PlayArrow,
     Visibility,
@@ -100,6 +102,26 @@ const Dashboard: React.FC = () => {
         };
 
         fetchData();
+    }, []);
+
+    // ============================================================
+    // Delete Interview
+    // ============================================================
+
+    const handleDeleteInterview = useCallback(async (e: React.MouseEvent, interviewId: number) => {
+        e.stopPropagation();
+        if (!window.confirm('Are you sure you want to delete this interview and all its data?')) {
+            return;
+        }
+
+        try {
+            await interviewService.deleteInterview(interviewId);
+            // After successful deletion, refresh the list
+            const history = await interviewService.getInterviewHistory();
+            setInterviews(history);
+        } catch (err: any) {
+            setError(err.message || 'Failed to delete interview.');
+        }
     }, []);
 
     // ============================================================
@@ -373,7 +395,7 @@ const Dashboard: React.FC = () => {
                         transition: 'border-color 0.2s',
                         '&:hover': { borderColor: 'primary.main' },
                     }}
-                    onClick={() => navigate(`/interview/${interview.interviewId}/feedback`)}
+                    onClick={() => navigate(`/interview/${interview.interviewId}/review`)}
                 >
                     <CardContent sx={{ p: 2.5, display: 'flex', alignItems: 'center', gap: 2 }}>
                         {/* Score */}
@@ -409,7 +431,17 @@ const Dashboard: React.FC = () => {
                         {getStatusChip(interview.status)}
 
                         {/* Action */}
-                        <Visibility sx={{ color: 'text.disabled', ml: 1 }} />
+                        <Box sx={{ display: 'flex', alignItems: 'center', ml: 1 }}>
+                            <Visibility sx={{ color: 'text.disabled', mr: 2 }} />
+                            <IconButton
+                                size="small"
+                                color="error"
+                                onClick={(e) => handleDeleteInterview(e, interview.interviewId!)}
+                                title="Delete Interview"
+                            >
+                                <Delete fontSize="small" />
+                            </IconButton>
+                        </Box>
                     </CardContent>
                 </Card>
             ))}

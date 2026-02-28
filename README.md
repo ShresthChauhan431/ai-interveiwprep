@@ -59,11 +59,15 @@ Our platform integrates:
     git clone https://github.com/RavenRepo/ai-interveiwprep.git
     cd ai-interveiwprep/backend
     ```
-2.  Configure `src/main/resources/application.properties` with your API keys and database credentials.
-3.  Run the application:
+2.  Create the database (once): run `mysql -u root -p < backend/scripts/init-db.sql` or create database `interview_platform` and a user with access. See `backend/.env.example` for required variables.
+3.  Copy `backend/.env.example` to `backend/.env` and set your database credentials, JWT secret, and API keys (OpenAI, ElevenLabs, D-ID, AssemblyAI).
+4.  Run the application (from `backend/`):
     ```bash
-    ./mvnw spring-boot:run
+    set -a && source .env && set +a && ./mvnw spring-boot:run
+    set -a; source .env; set +a; ./mvnw clean spring
+-boot:run
     ```
+    Flyway will apply migrations on first startup.
 
 ### 💻 Frontend Setup
 
@@ -87,3 +91,5 @@ We welcome contributions! Please feel free to fork the repository and submit a P
 ## 📄 License
 
 This project is licensed under the MIT License.
+
+For production deployment, see [DEPLOYMENT.md](DEPLOYMENT.md).

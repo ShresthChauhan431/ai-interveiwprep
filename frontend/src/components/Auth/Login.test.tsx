@@ -13,7 +13,7 @@ const mockNavigate = jest.fn();
 
 // Mock only useNavigate; keep the real MemoryRouter, Link, etc.
 jest.mock('react-router-dom', () => {
-    const actual = jest.requireActual('react-router-dom/dist/main');
+    const actual = jest.requireActual('react-router-dom');
     return {
         ...actual,
         useNavigate: () => mockNavigate,

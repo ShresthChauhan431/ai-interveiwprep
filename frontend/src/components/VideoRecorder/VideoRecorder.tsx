@@ -28,6 +28,7 @@ interface VideoRecorderProps {
     questionText: string;
     isUploading?: boolean;
     uploadProgress?: number;
+    isAvatarSpeaking?: boolean;
 }
 
 // ============================================================
@@ -50,6 +51,7 @@ const VideoRecorder: React.FC<VideoRecorderProps> = ({
     questionText,
     isUploading = false,
     uploadProgress = 0,
+    isAvatarSpeaking = false,
 }) => {
     const {
         isRecording,
@@ -85,6 +87,12 @@ const VideoRecorder: React.FC<VideoRecorderProps> = ({
         }
     }, [requestPermissions]);
 
+    // ============================================================
+    // Auto-start and Auto-submit states
+    // ============================================================
+    const [autoStartCountdown, setAutoStartCountdown] = useState<number | null>(null);
+    const [isAutoSubmitting, setIsAutoSubmitting] = useState(false);
+
     // Stop live preview tracks when not needed
     const stopCameraPreview = useCallback(() => {
         if (streamRef.current) {
@@ -107,6 +115,27 @@ const VideoRecorder: React.FC<VideoRecorderProps> = ({
         };
     }, [hasPermission, isRecording, recordedBlob, startCameraPreview, stopCameraPreview]);
 
+    // Handle auto-start countdown
+    useEffect(() => {
+        let timer: NodeJS.Timeout;
+        if (hasPermission && !isRecording && !recordedBlob && !isCheckingPermissions && !isAvatarSpeaking) {
+            if (autoStartCountdown === null) {
+                setAutoStartCountdown(3);
+            } else if (autoStartCountdown > 0) {
+                timer = setTimeout(() => {
+                    setAutoStartCountdown((prev) => (prev !== null ? prev - 1 : null));
+                }, 1000);
+            } else if (autoStartCountdown === 0) {
+                handleStartRecording();
+                setAutoStartCountdown(null);
+            }
+        } else {
+            // Reset countdown if state changes (e.g. avatar starts speaking again or recording starts)
+            setAutoStartCountdown(null);
+        }
+        return () => clearTimeout(timer);
+    }, [hasPermission, isRecording, recordedBlob, isCheckingPermissions, isAvatarSpeaking, autoStartCountdown]);
+
     // ============================================================
     // Handlers
     // ============================================================
@@ -114,6 +143,7 @@ const VideoRecorder: React.FC<VideoRecorderProps> = ({
     const handleStartRecording = async () => {
         setSubmitError(null);
         stopCameraPreview();
+        setIsAutoSubmitting(false);
         await startRecording(maxDuration);
     };
 
@@ -121,13 +151,18 @@ const VideoRecorder: React.FC<VideoRecorderProps> = ({
         stopRecording();
     };
 
+    const handleFinishAnswering = () => {
+        setIsAutoSubmitting(true);
+        stopRecording();
+    };
+
     const handleReRecord = () => {
         setSubmitError(null);
-
+        setIsAutoSubmitting(false);
         startCameraPreview();
     };
 
-    const handleSubmit = async () => {
+    const handleSubmit = useCallback(async () => {
         if (!recordedBlob) return;
 
         setSubmitError(null);
@@ -137,7 +172,15 @@ const VideoRecorder: React.FC<VideoRecorderProps> = ({
         } catch (err: any) {
             setSubmitError(err.message || 'Failed to submit response. Please try again.');
         }
-    };
+    }, [recordedBlob, onRecordingComplete]);
+
+    // Auto-submit when recording is ready
+    useEffect(() => {
+        if (recordedBlob && isAutoSubmitting && !submitError) {
+            handleSubmit();
+            setIsAutoSubmitting(false); // Prevent multiple submissions
+        }
+    }, [recordedBlob, isAutoSubmitting, submitError, handleSubmit]);
 
     // ============================================================
     // Recording progress (percentage of max duration)
@@ -226,19 +269,43 @@ const VideoRecorder: React.FC<VideoRecorderProps> = ({
                         />
                     </Box>
 
-                    {/* Start Button */}
-                    <Box sx={{ display: 'flex', justifyContent: 'center' }}>
-                        <Button
-                            variant="contained"
+                    {/* Start Button or Surveillance message */}
+                    {isAvatarSpeaking ? (
+                        <Typography
+                            variant="body2"
                             color="error"
-                            size="large"
-                            startIcon={<Videocam />}
-                            onClick={handleStartRecording}
-                            sx={{ px: 4, py: 1.5 }}
+                            textAlign="center"
+                            mt={2}
+                            sx={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: 1,
+                            }}
                         >
-                            Start Recording
-                        </Button>
-                    </Box>
+                            <Videocam sx={{ animation: 'pulse 1.5s infinite' }} />
+                            Camera active. Please listen to the question...
+                        </Typography>
+                    ) : (
+                        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', mt: 2 }}>
+                            {autoStartCountdown !== null && autoStartCountdown > 0 ? (
+                                <Typography variant="h6" color="error" sx={{ fontWeight: 'bold' }}>
+                                    Recording starts in {autoStartCountdown}...
+                                </Typography>
+                            ) : (
+                                <Button
+                                    variant="contained"
+                                    color="error"
+                                    size="large"
+                                    startIcon={<Videocam />}
+                                    onClick={handleStartRecording}
+                                    sx={{ px: 4, py: 1.5 }}
+                                >
+                                    Start Recording Now
+                                </Button>
+                            )}
+                        </Box>
+                    )}
 
                     <Typography
                         variant="caption"
@@ -327,13 +394,13 @@ const VideoRecorder: React.FC<VideoRecorderProps> = ({
                     <Box sx={{ display: 'flex', justifyContent: 'center' }}>
                         <Button
                             variant="contained"
-                            color="error"
+                            color="primary"
                             size="large"
-                            startIcon={<Stop />}
-                            onClick={handleStopRecording}
+                            startIcon={<Send />}
+                            onClick={handleFinishAnswering}
                             sx={{ px: 4, py: 1.5 }}
                         >
-                            Stop Recording
+                            Finish Answering & Submit
                         </Button>
                     </Box>
                 </Box>

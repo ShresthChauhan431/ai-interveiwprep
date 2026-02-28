@@ -12,6 +12,8 @@ public class InterviewQuestionDTO {
     private String difficulty;
     private String avatarVideoUrl;
     private boolean answered;
+    private String responseVideoUrl;
+    private String responseTranscription;
 
     public InterviewQuestionDTO() {
     }
@@ -71,5 +73,21 @@ public class InterviewQuestionDTO {
 
     public void setAnswered(boolean answered) {
         this.answered = answered;
+    }
+
+    public String getResponseVideoUrl() {
+        return responseVideoUrl;
+    }
+
+    public void setResponseVideoUrl(String responseVideoUrl) {
+        this.responseVideoUrl = responseVideoUrl;
+    }
+
+    public String getResponseTranscription() {
+        return responseTranscription;
+    }
+
+    public void setResponseTranscription(String responseTranscription) {
+        this.responseTranscription = responseTranscription;
     }
 }

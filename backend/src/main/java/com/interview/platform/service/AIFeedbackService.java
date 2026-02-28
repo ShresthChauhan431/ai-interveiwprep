@@ -27,13 +27,14 @@ import java.util.*;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * Service for generating AI-powered interview feedback using the OpenAI API.
+ * Service for generating AI-powered interview feedback using a local Ollama
+ * Llama 3 API.
  *
  * <h3>Purpose:</h3>
  * <p>
  * After a user completes an interview and all responses have been transcribed,
  * this service builds a prompt from the question-answer pairs and sends it to
- * OpenAI for evaluation. The AI returns a structured feedback JSON containing
+ * Ollama for evaluation. The AI returns a structured feedback JSON containing
  * an overall score, strengths, weaknesses, recommendations, and a detailed
  * analysis. This feedback is persisted to the database and displayed on the
  * user's dashboard.
@@ -42,7 +43,7 @@ import java.util.concurrent.CompletableFuture;
  * <h3>P1 Changes:</h3>
  * <ul>
  * <li><strong>Resilience4j:</strong> The manual retry loop with exponential
- * backoff for the OpenAI API call has been replaced with programmatic
+ * backoff for the Ollama API call has been replaced with programmatic
  * Resilience4j {@link Retry} and {@link CircuitBreaker} decorators.
  * This provides configurable retry behavior, circuit breaker protection
  * against sustained OpenAI outages, and observable metrics via the
@@ -54,8 +55,8 @@ import java.util.concurrent.CompletableFuture;
  *
  * <h3>Circuit Breaker Behavior:</h3>
  * <p>
- * This service shares the "openai" circuit breaker instance with
- * {@link OpenAIService}. If OpenAI is experiencing issues, both question
+ * This service shares the "ollama" circuit breaker instance with
+ * {@link OllamaService}. If Ollama is experiencing issues, both question
  * generation and feedback generation will fail fast, preventing unnecessary
  * API calls and reducing latency for the user. The
  * {@link com.interview.platform.task.InterviewRecoveryTask} will detect
@@ -63,7 +64,7 @@ import java.util.concurrent.CompletableFuture;
  * {@code FAILED} after a configurable timeout.
  * </p>
  *
- * @see OpenAIService
+ * @see OllamaService
  * @see com.interview.platform.config.ResilienceConfig
  * @see com.interview.platform.task.InterviewRecoveryTask
  */
@@ -72,42 +73,37 @@ public class AIFeedbackService {
 
     private static final Logger log = LoggerFactory.getLogger(AIFeedbackService.class);
 
-    private static final String OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
-
-    private final RestTemplate openAIRestTemplate;
+    private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
     private final ResponseRepository responseRepository;
     private final InterviewRepository interviewRepository;
     private final FeedbackRepository feedbackRepository;
 
-    // Resilience4j instances — shares the "openai" named instances with
-    // OpenAIService
-    private final Retry openaiRetry;
-    private final CircuitBreaker openaiCircuitBreaker;
+    // Resilience4j instances — shares the "ollama" named instances with
+    // OllamaService
+    private final Retry ollamaRetry;
+    private final CircuitBreaker ollamaCircuitBreaker;
 
-    @Value("${openai.model:gpt-4o}")
+    @Value("${ollama.api.url:http://localhost:11434/api/chat}")
+    private String apiUrl;
+
+    @Value("${ollama.model:llama3}")
     private String model;
 
-    @Value("${openai.max-tokens:2000}")
-    private int maxTokens;
-
-    @Value("${openai.temperature:0.7}")
-    private double temperature;
-
-    public AIFeedbackService(@Qualifier("openAIRestTemplate") RestTemplate openAIRestTemplate,
+    public AIFeedbackService(RestTemplate restTemplate,
             ObjectMapper objectMapper,
             ResponseRepository responseRepository,
             InterviewRepository interviewRepository,
             FeedbackRepository feedbackRepository,
-            @Qualifier("openaiRetry") Retry openaiRetry,
-            @Qualifier("openaiCircuitBreaker") CircuitBreaker openaiCircuitBreaker) {
-        this.openAIRestTemplate = openAIRestTemplate;
+            @Qualifier("ollamaRetry") Retry ollamaRetry,
+            @Qualifier("ollamaCircuitBreaker") CircuitBreaker ollamaCircuitBreaker) {
+        this.restTemplate = restTemplate;
         this.objectMapper = objectMapper;
         this.responseRepository = responseRepository;
         this.interviewRepository = interviewRepository;
         this.feedbackRepository = feedbackRepository;
-        this.openaiRetry = openaiRetry;
-        this.openaiCircuitBreaker = openaiCircuitBreaker;
+        this.ollamaRetry = ollamaRetry;
+        this.ollamaCircuitBreaker = ollamaCircuitBreaker;
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -144,11 +140,12 @@ public class AIFeedbackService {
         // Step 4: Build prompt from Q&A pairs
         String prompt = buildFeedbackPrompt(responses);
 
-        // Step 5: Call OpenAI (with Resilience4j retry + circuit breaker)
-        String aiResponse = callOpenAIWithResilience(prompt);
+        // Step 5: Call Ollama (with Resilience4j retry + circuit breaker)
+        String aiResponse = callOllamaWithResilience(prompt);
 
         // Step 6: Parse feedback
         FeedbackDTO feedbackDTO = parseFeedbackResponse(aiResponse);
+        // -------------------------
 
         // Step 7: Create and save Feedback entity
         Feedback feedback = createFeedbackEntity(interview, feedbackDTO);
@@ -203,11 +200,18 @@ public class AIFeedbackService {
 
         return String.format(
                 """
-                        Analyze this interview performance based on the following Q&A pairs:
+                        You are an expert interview evaluator and integrity monitor.
+                        Analyze the following interview Q&A pairs carefully:
                         %s
 
+                        INTEGRITY CHECK (IMPORTANT):
+                        - Examine each answer transcript carefully for signs of cheating or misconduct.
+                        - If an answer transcript contains labels such as "Speaker A:", "Speaker B:", or multiple distinct voices, this is evidence of CHEATING (another person assisting).
+                        - If answers seem copied from an external source (very formal, perfectly structured, unlikely for verbal speech) flag it as suspicious.
+                        - If cheating is detected, set the score to 20 or below and include a clear "⚠️ INTEGRITY ALERT: Cheating detected — multiple voices or unauthorized assistance found in responses." message at the START of the detailedAnalysis.
+
                         Provide:
-                        1. Overall score (0-100)
+                        1. Overall score (0-100), applying integrity penalty if cheating detected
                         2. Top 3-5 strengths
                         3. Top 3-5 weaknesses
                         4. Specific actionable recommendations
@@ -218,64 +222,35 @@ public class AIFeedbackService {
                           "strengths": ["strength1", "strength2", ...],
                           "weaknesses": ["weakness1", "weakness2", ...],
                           "recommendations": ["recommendation1", "recommendation2", ...],
-                          "detailedAnalysis": "A paragraph summarizing the overall performance"
+                          "detailedAnalysis": "A paragraph summarizing performance and any integrity concerns"
                         }
                         """,
                 qaPairs.toString());
     }
 
     // ════════════════════════════════════════════════════════════════
-    // OpenAI API Call (with Resilience4j)
+    // Ollama API Call (with Resilience4j)
     // ════════════════════════════════════════════════════════════════
 
     /**
-     * Call OpenAI Chat Completion API with Resilience4j retry and circuit breaker.
-     *
-     * <p>
-     * Replaces the previous manual retry loop with exponential backoff.
-     * The retry configuration (max attempts, backoff multiplier, retryable
-     * exceptions) is defined in
-     * {@link com.interview.platform.config.ResilienceConfig}
-     * and can be tuned via application.properties.
-     * </p>
-     *
-     * <p>
-     * Shares the "openai" circuit breaker instance with {@link OpenAIService},
-     * so failures in question generation and feedback generation are tracked
-     * together. This is intentional — if OpenAI is down, both operations
-     * should fail fast.
-     * </p>
-     *
-     * @param prompt the feedback generation prompt
-     * @return the assistant's response content (JSON feedback)
-     * @throws RuntimeException if all retries are exhausted or circuit is open
+     * Call Ollama endpoint with Resilience4j retry and circuit breaker.
      */
-    private String callOpenAIWithResilience(String prompt) {
-        return Decorators.ofSupplier(() -> callOpenAI(prompt))
-                .withRetry(openaiRetry)
-                .withCircuitBreaker(openaiCircuitBreaker)
+    private String callOllamaWithResilience(String prompt) {
+        return Decorators.ofSupplier(() -> callOllama(prompt))
+                .withRetry(ollamaRetry)
+                .withCircuitBreaker(ollamaCircuitBreaker)
                 .decorate()
                 .get();
     }
 
     /**
-     * Make the actual HTTP POST to the OpenAI Chat Completion endpoint.
-     *
-     * <p>
-     * This is the "raw" API call without any retry or circuit breaker
-     * logic. It is wrapped by {@link #callOpenAIWithResilience} which
-     * handles resilience concerns.
-     * </p>
-     *
-     * @param prompt the feedback generation prompt
-     * @return the assistant's response content (JSON feedback string)
-     * @throws RuntimeException on API errors or empty responses
+     * Make the actual HTTP POST to the Ollama endpoint.
      */
-    private String callOpenAI(String prompt) {
+    private String callOllama(String prompt) {
         Map<String, Object> requestBody = new LinkedHashMap<>();
         requestBody.put("model", model);
-        requestBody.put("max_tokens", maxTokens);
-        requestBody.put("temperature", temperature);
+        requestBody.put("format", "json");
+        requestBody.put("stream", false);
 
         List<Map<String, String>> messages = new ArrayList<>();
 
@@ -294,12 +269,12 @@ public class AIFeedbackService {
 
         requestBody.put("messages", messages);
 
-        log.debug("Calling OpenAI Chat Completion for feedback: model={}, maxTokens={}", model, maxTokens);
-        ResponseEntity<String> response = openAIRestTemplate.postForEntity(
-                OPENAI_API_URL, requestBody, String.class);
+        log.debug("Calling Ollama API for feedback: model={}", model);
+        ResponseEntity<String> response = restTemplate.postForEntity(
+                apiUrl, requestBody, String.class);
 
         if (response.getBody() == null) {
-            throw new RuntimeException("Empty response from OpenAI API");
+            throw new RuntimeException("Empty response from Ollama API");
         }
 
         return extractContentFromResponse(response.getBody());
@@ -308,34 +283,22 @@ public class AIFeedbackService {
     private String extractContentFromResponse(String responseBody) {
         try {
             JsonNode root = objectMapper.readTree(responseBody);
-            JsonNode choices = root.path("choices");
+            JsonNode message = root.path("message");
 
-            if (choices.isEmpty() || choices.isMissingNode()) {
-                throw new RuntimeException("No choices returned from OpenAI API");
+            if (message.isMissingNode() || !message.has("content")) {
+                throw new RuntimeException("Unexpected JSON structure returned from Ollama API");
             }
 
-            String content = choices.get(0)
-                    .path("message")
-                    .path("content")
-                    .asText();
+            String content = message.get("content").asText();
 
             if (content == null || content.isBlank()) {
-                throw new RuntimeException("Empty content in OpenAI API response");
-            }
-
-            // Log token usage for monitoring and cost tracking
-            JsonNode usage = root.path("usage");
-            if (!usage.isMissingNode()) {
-                log.info("Feedback OpenAI tokens — prompt: {}, completion: {}, total: {}",
-                        usage.path("prompt_tokens").asInt(),
-                        usage.path("completion_tokens").asInt(),
-                        usage.path("total_tokens").asInt());
+                throw new RuntimeException("Empty content in Ollama API response");
             }
 
             return content.trim();
         } catch (JsonProcessingException e) {
-            log.error("Failed to parse OpenAI response JSON", e);
-            throw new RuntimeException("Failed to parse OpenAI API response", e);
+            log.error("Failed to parse Ollama response JSON", e);
+            throw new RuntimeException("Failed to parse Ollama API response", e);
         }
     }
 
@@ -345,12 +308,17 @@ public class AIFeedbackService {
 
     private FeedbackDTO parseFeedbackResponse(String content) {
         try {
-            // Strip markdown code fences if present
             String jsonContent = content;
-            if (jsonContent.startsWith("```")) {
-                jsonContent = jsonContent.replaceAll("^```(?:json)?\\s*", "");
-                jsonContent = jsonContent.replaceAll("\\s*```$", "");
+
+            // Extract only the JSON object part
+            int startIndex = jsonContent.indexOf('{');
+            int endIndex = jsonContent.lastIndexOf('}');
+            if (startIndex >= 0 && startIndex <= endIndex) {
+                jsonContent = jsonContent.substring(startIndex, endIndex + 1);
+            } else {
+                log.warn("Response does not contain a JSON object delimiter: {}", content);
             }
+
             jsonContent = jsonContent.trim();
 
             FeedbackDTO dto = objectMapper.readValue(jsonContent, FeedbackDTO.class);

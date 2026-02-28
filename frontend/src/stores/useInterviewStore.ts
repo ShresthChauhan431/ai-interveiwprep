@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { InterviewDTO, InterviewQuestion } from '../types';
+import { InterviewDTO } from '../types';
 
 interface InterviewState {
   interview: InterviewDTO | null;

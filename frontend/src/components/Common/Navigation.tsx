@@ -25,6 +25,7 @@ import {
     Close,
     Dashboard,
     History,
+    Home,
     Login,
     Logout,
     Menu as MenuIcon,
@@ -40,6 +41,7 @@ import { useAuth } from '../../context/AuthContext';
 // ============================================================
 
 const navItems = [
+    { label: 'Home', path: '/', icon: <Home fontSize="small" /> },
     { label: 'Dashboard', path: '/dashboard', icon: <Dashboard fontSize="small" /> },
     { label: 'Start Interview', path: '/interview/start', icon: <PlayArrow fontSize="small" /> },
     { label: 'History', path: '/history', icon: <History fontSize="small" /> },
@@ -206,7 +208,7 @@ const Navigation: React.FC = () => {
                                             sx={{
                                                 color: isActive(item.path) ? 'primary.main' : 'text.secondary',
                                                 fontWeight: isActive(item.path) ? 700 : 500,
-                                                bgcolor: isActive(item.path) ? 'primary.main' + '0A' : 'transparent',
+                                                bgcolor: isActive(item.path) ? (theme) => `${theme.palette.primary.main}0A` : 'transparent',
                                                 '&:hover': { bgcolor: 'action.hover' },
                                             }}
                                         >
