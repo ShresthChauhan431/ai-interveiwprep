@@ -28,9 +28,10 @@ The **AI Interview Preparation Platform** is a full-stack application that simul
 - **📊 Comprehensive Feedback** — AI-generated performance analytics with scores, strengths, weaknesses, and recommendations.
 - **📄 Resume Parsing** — Automatic text extraction from PDF (Apache PDFBox) and DOCX (Apache POI) resumes.
 - **📈 Interview History** — Dashboard to review past interviews, watch recordings, and track growth over time.
-- **🔐 JWT Authentication** — Secure user registration and login with token-based auth.
+- **🔐 JWT Authentication** — Secure user registration and login with token-based auth. Role-based access control (USER/ADMIN).
 - **⚡ Resilient Architecture** — Circuit breakers, retry policies (Resilience4j), and rate limiting (Bucket4j) for external API calls.
 - **🔄 Recovery System** — Scheduled task automatically recovers stuck interviews (e.g., avatar generation timeouts).
+- **🛡️ Security Hardened** — Magic-byte file validation, prompt injection mitigation, optimistic locking, state machine enforcement, and path traversal protection.
 
 ## 🛠️ Technology Stack
 
@@ -44,7 +45,7 @@ The **AI Interview Preparation Platform** is a full-stack application that simul
 | **Security** | Spring Security + JWT (jjwt 0.11.5) |
 | **Caching** | Caffeine (in-memory cache for avatar videos & TTS audio) |
 | **Resilience** | Resilience4j (circuit breaker + retry for external APIs) |
-| **Rate Limiting** | Bucket4j (token-bucket per-user limiting on expensive endpoints) |
+| **Rate Limiting** | Bucket4j (token-bucket per-user limiting, Caffeine-backed cache with TTL eviction) |
 | **File Storage** | Local filesystem (configurable path, no AWS dependency) |
 | **Real-time** | Server-Sent Events (SSE) for avatar generation progress |
 | **Document Parsing** | Apache PDFBox 2.0, Apache POI 5.2 |
@@ -78,7 +79,7 @@ ai-interveiwprep/
 │   │   ├── service/         # Business logic (Interview, Ollama, TTS, Avatar, STT, etc.)
 │   │   └── task/            # Scheduled tasks (interview recovery)
 │   ├── src/main/resources/
-│   │   ├── db/migration/    # Flyway SQL migrations (V1–V3)
+│   │   ├── db/migration/    # Flyway SQL migrations (V1–V4)
 │   │   ├── application.properties
 │   │   └── application-dev.properties
 │   ├── scripts/init-db.sql  # MySQL database initialization
@@ -299,8 +300,8 @@ DB_NAME=interview_platform
 DB_USER=user
 DB_PASSWORD=password
 
-# JWT
-JWT_SECRET=<generate with: openssl rand -base64 64>
+# JWT (REQUIRED — app will not start without this)
+JWT_SECRET=<generate with: openssl rand -base64 64>  # Must be ≥64 characters
 JWT_EXPIRATION=3600000
 
 # External APIs
@@ -327,29 +328,39 @@ RATE_LIMIT_REFILL_SECONDS=60
 
 ### Frontend
 
-The frontend reads `REACT_APP_API_URL` from environment (defaults to `http://localhost:8080`). For local development with the default backend port:
+The frontend reads `REACT_APP_API_URL` from environment (defaults to `http://localhost:8081`). For local development with the default backend port, no `.env` override is needed.
 
 ```bash
-# frontend/.env
+# frontend/.env (only needed if your backend runs on a non-default port)
 REACT_APP_API_URL=http://localhost:8081
 ```
 
 ## 🔒 Security
 
-- **JWT Authentication** — Stateless token-based auth with configurable expiration.
-- **No Hardcoded Secrets** — All secrets via environment variables; backend fails fast if required vars are missing.
-- **Rate Limiting** — Token-bucket rate limiting on expensive endpoints (`POST /api/interviews/start`, `/complete`, `/api/resumes/upload`) to prevent API cost abuse.
+- **JWT Authentication** — Stateless token-based auth with configurable expiration. `JWT_SECRET` is **mandatory** (no default) — the app fails fast on startup if missing or shorter than 64 characters.
+- **Role-Based Access Control** — Users have a `role` column (`USER` or `ADMIN`). The role is embedded as a JWT claim and extracted in the auth filter to populate Spring Security `GrantedAuthority`. ADMIN is required for actuator and future admin-only endpoints.
+- **No Hardcoded Secrets** — All secrets via environment variables; backend fails fast if required vars are missing. Previously committed test artifacts with hardcoded API keys have been removed and gitignored.
+- **File Endpoint Authentication** — `/api/files/**` endpoints require authentication (previously `permitAll`). Path traversal prevention uses absolute-path canonicalization for robust `startsWith` checks.
+- **Resume Validation** — Dual-layer file validation: MIME type header check **plus** magic-byte verification (PDF `%PDF` / DOCX `PK` headers). Prevents spoofed uploads.
+- **Prompt Injection Mitigation** — Resume text is sanitized (delimiter stripping, truncation to 10K chars) and wrapped in `<RESUME_BEGIN>`/`<RESUME_END>` delimiters in LLM prompts with explicit instructions to ignore injected directives.
+- **SSE Security** — JWT tokens are no longer passed as URL query parameters for SSE connections (which leaked them into browser history, server logs, and Referer headers). A short-lived, single-use ticket mechanism is used instead.
+- **Optimistic Locking** — `Interview` entity uses `@Version` to prevent race conditions between the avatar pipeline and recovery task.
+- **State Machine Enforcement** — `InterviewStatus.canTransitionTo()` and `Interview.transitionTo()` validate all status transitions, preventing illegal transitions like `COMPLETED → IN_PROGRESS`.
+- **Rate Limiting** — Token-bucket rate limiting on expensive endpoints (`POST /api/interviews/start`, `/complete`, `/api/resumes/upload`) to prevent API cost abuse. Max questions reduced to 10 per interview, default to 5. Rate limit bucket cache uses Caffeine with 10-minute TTL eviction (previously unbounded `ConcurrentHashMap`).
 - **Circuit Breakers** — Resilience4j protects against cascading failures when external APIs (D-ID, ElevenLabs, AssemblyAI) are degraded.
-- **CORS** — Configurable allowed origins; no wildcard in production.
-- **Actuator Lockdown** — Only `/actuator/health` exposed publicly; detailed info requires ADMIN role.
-- **Flyway Migrations** — Schema managed by versioned SQL migrations; `ddl-auto=validate` in production.
+- **CORS** — Configurable allowed origins with `@PostConstruct` startup validation. Wildcard (`*`) origins are rejected at boot when credentials are enabled.
+- **Actuator Lockdown** — Only `/actuator/health` and `/actuator/info` exposed publicly; detailed info requires ADMIN role. Dev profile no longer exposes `env`, `beans`, or `mappings` endpoints.
+- **Flyway Migrations** — Schema managed by versioned SQL migrations (V1–V4); `ddl-auto=validate` in production. `flyway.clean-disabled=true` even in dev profile to prevent accidental data loss.
 
 ## 🐛 Known Limitations
 
 1. **Avatar Generation Time** — D-ID can take 30–60 seconds per video. A progress bar shows real-time status via SSE. Interviews fall back to text-only mode after 15 minutes.
 2. **Transcription Accuracy** — Depends on audio quality. AssemblyAI provides confidence scores. Feedback gracefully handles missing transcriptions.
-3. **API Costs** — D-ID (~$0.05/video), ElevenLabs, and AssemblyAI have usage-based pricing. Rate limiting prevents runaway costs.
-4. **Local Storage** — Files are stored on the local filesystem by default (no S3). For production, configure external storage or migrate to presigned S3 URLs.
+3. **API Costs** — D-ID (~$0.05/video), ElevenLabs, and AssemblyAI have usage-based pricing. Rate limiting (5 burst/min) and max 10 questions/interview prevent runaway costs.
+4. **Local Storage** — Files are stored on the local filesystem by default (canonicalized to absolute path at startup). For production, configure a persistent volume or migrate to S3 via a `StorageService` interface (planned).
+5. **No Refresh Token** — JWT expires after 1 hour with no automatic refresh. Long interviews may require re-login.
+6. **No `httpOnly` Cookie Auth** — JWT is stored in `localStorage` (XSS risk). Migration to `httpOnly` + `Secure` + `SameSite=Strict` cookies is planned.
+7. **Docker Compose Partial** — Only MySQL is containerized. Backend, frontend, and Ollama run bare-metal. Full containerization is planned.
 
 ## 📚 Documentation
 
@@ -359,6 +370,16 @@ REACT_APP_API_URL=http://localhost:8081
 | [QUICK_START.md](QUICK_START.md) | Quick reference commands and checklists |
 | [DEPLOYMENT.md](DEPLOYMENT.md) | Production deployment guide (env vars, HTTPS, CORS, logging) |
 | [FIXES_APPLIED.md](FIXES_APPLIED.md) | Changelog of all fixes and improvements applied |
+| [audit report.md](audit%20report.md) | Full-stack security & architecture audit (34 findings across P0–P3) |
+
+### Flyway Migration History
+
+| Version | File | Description |
+|---------|------|-------------|
+| V1 | `V1__baseline_schema.sql` | Baseline schema: users, resumes, job_roles, interviews, questions, responses, feedbacks |
+| V2 | `V2__seed_job_roles.sql` | Seed data for job roles |
+| V3 | `V3__add_cache_tables.sql` | Avatar video and TTS audio cache tables |
+| V4 | `V4__audit_fixes.sql` | Audit remediation: `@Version` column on interviews, unique constraint on `responses.question_id`, `role` column on users, index on `responses.user_id` |
 
 ## 🤝 Contributing
 
