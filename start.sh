@@ -36,6 +36,37 @@ if [ ! -f "backend/.env" ]; then
     exit 1
 fi
 
+# AUDIT-FIX: Source backend/.env so environment variables (JWT_SECRET, CORS_ALLOWED_ORIGINS,
+# DB_USER, DB_PASSWORD, etc.) are exported into this shell and inherited by child processes.
+# Spring Boot does NOT auto-load .env files — without this, the backend will fail to start
+# because JWT_SECRET and CORS_ALLOWED_ORIGINS have no defaults after the security audit.
+print_info "Loading environment variables from backend/.env..."
+set -a  # auto-export all variables
+source backend/.env
+set +a
+print_success "Environment variables loaded"
+
+# AUDIT-FIX: Validate mandatory env vars that have no defaults after the security audit
+MISSING_VARS=""
+if [ -z "$JWT_SECRET" ]; then
+    MISSING_VARS="$MISSING_VARS JWT_SECRET"
+fi
+if [ -z "$CORS_ALLOWED_ORIGINS" ]; then
+    MISSING_VARS="$MISSING_VARS CORS_ALLOWED_ORIGINS"
+fi
+if [ -z "$DB_USER" ]; then
+    MISSING_VARS="$MISSING_VARS DB_USER"
+fi
+if [ -z "$DB_PASSWORD" ]; then
+    MISSING_VARS="$MISSING_VARS DB_PASSWORD"
+fi
+if [ -n "$MISSING_VARS" ]; then
+    print_error "Missing required environment variables in backend/.env:$MISSING_VARS"
+    print_info "Edit backend/.env and set these values, then re-run ./start.sh"
+    exit 1
+fi
+print_success "Required environment variables validated"
+
 # Create logs directory
 mkdir -p logs
 
@@ -50,7 +81,7 @@ else
     print_info "Starting Ollama server..."
     nohup ollama serve > logs/ollama.log 2>&1 &
     sleep 3
-    
+
     if curl -s http://localhost:11434/api/tags >/dev/null 2>&1; then
         print_success "Ollama started"
     else
@@ -70,24 +101,26 @@ if curl -s http://localhost:8081/actuator/health >/dev/null 2>&1; then
     print_success "Backend is already running"
 else
     cd backend
+    # AUDIT-FIX: env vars are already exported via 'source backend/.env' above,
+    # so the Spring Boot process inherits JWT_SECRET, CORS_ALLOWED_ORIGINS, etc.
     nohup ./mvnw spring-boot:run > ../logs/backend.log 2>&1 &
     BACKEND_PID=$!
     cd ..
-    
+
     print_info "Waiting for backend to start (this may take 30-60 seconds)..."
-    
+
     # Wait up to 120 seconds for backend to start
     for i in {1..120}; do
         if curl -s http://localhost:8081/actuator/health >/dev/null 2>&1; then
             print_success "Backend started (PID: $BACKEND_PID)"
             break
         fi
-        
+
         if [ $i -eq 120 ]; then
             print_error "Backend failed to start. Check logs/backend.log"
             exit 1
         fi
-        
+
         sleep 1
     done
 fi
@@ -106,21 +139,21 @@ else
     nohup npm start > ../logs/frontend.log 2>&1 &
     FRONTEND_PID=$!
     cd ..
-    
+
     print_info "Waiting for frontend to start..."
-    
+
     # Wait up to 60 seconds for frontend to start
     for i in {1..60}; do
         if curl -s http://localhost:3002 >/dev/null 2>&1; then
             print_success "Frontend started (PID: $FRONTEND_PID)"
             break
         fi
-        
+
         if [ $i -eq 60 ]; then
             print_error "Frontend failed to start. Check logs/frontend.log"
             exit 1
         fi
-        
+
         sleep 1
     done
 fi

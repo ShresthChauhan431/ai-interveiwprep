@@ -553,8 +553,8 @@ public class InterviewService {
             throw new RuntimeException("Cannot complete interview without any responses");
         }
 
-        // Update interview status to PROCESSING
-        interview.setStatus(InterviewStatus.PROCESSING);
+        // AUDIT-FIX: Use transitionTo() for state machine enforcement instead of raw setStatus()
+        interview.transitionTo(InterviewStatus.PROCESSING);
         interview.setCompletedAt(LocalDateTime.now());
         interviewRepository.save(interview);
 
@@ -564,9 +564,9 @@ public class InterviewService {
         try {
             aiFeedbackService.generateFeedbackAsync(interviewId)
                     .thenAccept(feedback -> {
-                        // Update interview status to COMPLETED when feedback is ready
+                        // AUDIT-FIX: Use transitionTo() for state machine enforcement instead of raw setStatus()
                         interviewRepository.findById(interviewId).ifPresent(i -> {
-                            i.setStatus(InterviewStatus.COMPLETED);
+                            i.transitionTo(InterviewStatus.COMPLETED);
                             interviewRepository.save(i);
                             log.info("Interview ID: {} completed with score: {}",
                                     interviewId, feedback.getOverallScore());
@@ -575,8 +575,9 @@ public class InterviewService {
                     .exceptionally(ex -> {
                         log.error("Async feedback generation failed. Transitioning interview ID: {} to FAILED",
                                 interviewId, ex);
+                        // AUDIT-FIX: Use transitionTo() for state machine enforcement instead of raw setStatus()
                         interviewRepository.findById(interviewId).ifPresent(i -> {
-                            i.setStatus(InterviewStatus.FAILED);
+                            i.transitionTo(InterviewStatus.FAILED);
                             interviewRepository.save(i);
                         });
                         return null;

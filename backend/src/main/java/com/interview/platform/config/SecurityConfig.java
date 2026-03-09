@@ -50,9 +50,9 @@ public class SecurityConfig {
     /**
      * Comma-separated list of allowed CORS origins.
      * Set via CORS_ALLOWED_ORIGINS env var or app.cors.allowed-origins property.
-     * Default: http://localhost:3000
+     * AUDIT-FIX: Removed default fallback — app fails fast if CORS_ALLOWED_ORIGINS is missing.
      */
-    @Value("${app.cors.allowed-origins:http://localhost:3000}")
+    @Value("${app.cors.allowed-origins}")
     private String allowedOrigins;
 
     public SecurityConfig(JwtAuthenticationFilter jwtAuthenticationFilter) {
@@ -71,8 +71,14 @@ public class SecurityConfig {
      * <p>This {@code @PostConstruct} check catches the problem at startup,
      * giving the operator immediate feedback in the logs.</p>
      */
+    // AUDIT-FIX: Fail fast if CORS_ALLOWED_ORIGINS is blank, missing, or contains wildcard '*'
     @PostConstruct
     public void validateCorsConfig() {
+        if (allowedOrigins == null || allowedOrigins.isBlank()) {
+            throw new IllegalStateException(
+                    "CORS_ALLOWED_ORIGINS must be set and non-blank. "
+                            + "Example: CORS_ALLOWED_ORIGINS=http://localhost:3000,https://myapp.example.com");
+        }
         if (allowedOrigins.contains("*")) {
             throw new IllegalStateException(
                     "CORS_ALLOWED_ORIGINS cannot contain '*' when credentials are enabled "
@@ -96,8 +102,9 @@ public class SecurityConfig {
                                     "{\"error\":\"Unauthorized\",\"message\":\"Authentication required\",\"status\":401}");
                         }))
                 .authorizeHttpRequests(auth -> auth
-                        // Public endpoints — no authentication required
-                        .requestMatchers("/api/auth/**").permitAll()
+                        // AUDIT-FIX: Profile endpoints require authentication — only login/register are public
+                        .requestMatchers("/api/auth/login", "/api/auth/register").permitAll()
+                        .requestMatchers("/api/auth/**").authenticated()
                         // Job roles list is read-only and needed before login on the start screen
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/job-roles").permitAll()
                         // File serving — requires authentication + ownership checks in FileController

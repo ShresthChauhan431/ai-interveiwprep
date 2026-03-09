@@ -5,7 +5,10 @@ import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "responses")
+// AUDIT-FIX: Unique constraint prevents duplicate response submissions per question (aligns with V4 migration uq_response_question)
+@Table(name = "responses", uniqueConstraints = @UniqueConstraint(
+        name = "uq_response_question",
+        columnNames = {"question_id"}))
 public class Response {
 
     @Id

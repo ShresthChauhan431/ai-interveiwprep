@@ -127,10 +127,14 @@ public class OllamaService {
      * Sanitize resume text to mitigate prompt injection attacks (P1-4).
      *
      * <ul>
-     *   <li>Truncates to 10,000 characters to prevent context window exhaustion</li>
+     *   <li>Truncates to 4,000 characters to prevent context window exhaustion</li>
      *   <li>Strips delimiter-like sequences that could escape the resume block</li>
-     *   <li>Removes common prompt injection patterns</li>
+     *   <li>Removes common prompt injection patterns (case-insensitive)</li>
      * </ul>
+     *
+     * AUDIT-FIX: Strengthened sanitization — added explicit prompt injection pattern
+     * stripping ("ignore previous instructions", "system:", "###", "<|im_start|>", etc.)
+     * and reduced max length from 10,000 to 4,000 characters per audit requirement.
      *
      * @param text the raw extracted resume text
      * @return sanitized text safe for prompt interpolation
@@ -140,8 +144,8 @@ public class OllamaService {
             return "No resume content available";
         }
 
-        // Truncate to 10,000 characters to prevent context window abuse
-        String sanitized = text.length() > 10_000 ? text.substring(0, 10_000) : text;
+        // AUDIT-FIX: Truncate to 4,000 characters (was 10,000) per audit requirement
+        String sanitized = text.length() > 4_000 ? text.substring(0, 4_000) : text;
 
         // Strip delimiter escape sequences that could break out of the resume block
         sanitized = sanitized.replace("<RESUME_BEGIN>", "")
@@ -149,6 +153,22 @@ public class OllamaService {
                 .replace("```", "")
                 .replace("<|", "")
                 .replace("|>", "");
+
+        // AUDIT-FIX: Strip common prompt injection patterns (case-insensitive)
+        sanitized = sanitized.replaceAll("(?i)ignore\\s+(all\\s+)?previous\\s+instructions", "")
+                .replaceAll("(?i)system\\s*:", "")
+                .replaceAll("(?i)<\\|im_start\\|>", "")
+                .replaceAll("(?i)<\\|im_end\\|>", "")
+                .replaceAll("(?i)<\\|im_sep\\|>", "")
+                .replaceAll("###\\s*", "")
+                .replaceAll("(?i)\\[INST\\]", "")
+                .replaceAll("(?i)\\[/INST\\]", "")
+                .replaceAll("(?i)<<SYS>>", "")
+                .replaceAll("(?i)<</SYS>>", "")
+                .replaceAll("(?i)you\\s+are\\s+now\\s+", "")
+                .replaceAll("(?i)disregard\\s+(all\\s+)?prior\\s+", "")
+                .replaceAll("(?i)forget\\s+(all\\s+)?previous\\s+", "")
+                .replaceAll("(?i)new\\s+instructions?\\s*:", "");
 
         return sanitized;
     }

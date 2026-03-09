@@ -222,8 +222,8 @@ public class InterviewRecoveryTask {
                 interviewId, elapsedMinutes, questionsWithAvatars, totalQuestions,
                 interview.getUser() != null ? interview.getUser().getId() : "unknown");
 
-        // Transition to IN_PROGRESS — user can proceed with text-only fallback
-        interview.setStatus(InterviewStatus.IN_PROGRESS);
+        // AUDIT-FIX: Use transitionTo() for state machine enforcement instead of raw setStatus()
+        interview.transitionTo(InterviewStatus.IN_PROGRESS);
         interviewRepository.save(interview);
 
         log.info("Interview {} recovered: GENERATING_VIDEOS → IN_PROGRESS (text-only fallback for {} questions)",
@@ -325,7 +325,8 @@ public class InterviewRecoveryTask {
                 interviewId, elapsedMinutes,
                 interview.getUser() != null ? interview.getUser().getId() : "unknown");
 
-        interview.setStatus(InterviewStatus.FAILED);
+        // AUDIT-FIX: Use transitionTo() for state machine enforcement instead of raw setStatus()
+        interview.transitionTo(InterviewStatus.FAILED);
         interviewRepository.save(interview);
 
         log.info("Interview {} recovered: PROCESSING → FAILED", interviewId);

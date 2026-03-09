@@ -1,6 +1,8 @@
 package com.interview.platform.controller;
 
 import com.interview.platform.dto.ResumeResponse;
+import com.interview.platform.model.Resume;
+import com.interview.platform.repository.ResumeRepository;
 import com.interview.platform.service.ResumeService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
@@ -8,14 +10,41 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.List;
+import java.util.stream.Collectors;
+
 @RestController
 @RequestMapping("/api/resumes")
 public class ResumeController {
 
     private final ResumeService resumeService;
+    private final ResumeRepository resumeRepository;
 
-    public ResumeController(ResumeService resumeService) {
+    public ResumeController(ResumeService resumeService, ResumeRepository resumeRepository) {
         this.resumeService = resumeService;
+        this.resumeRepository = resumeRepository;
+    }
+
+    // AUDIT-FIX (Section 9b): Added GET /api/resumes for listing all user's resumes with ownership filter
+    /**
+     * List all resumes belonging to the authenticated user.
+     *
+     * @param request the HTTP request (userId extracted from JWT)
+     * @return list of resume summaries for the current user
+     */
+    @GetMapping
+    public ResponseEntity<List<ResumeResponse>> listResumes(HttpServletRequest request) {
+        Long userId = getUserIdFromRequest(request);
+        List<Resume> resumes = resumeRepository.findByUserId(userId);
+        List<ResumeResponse> responses = resumes.stream()
+                .map(resume -> ResumeResponse.builder()
+                        .id(resume.getId())
+                        .fileName(resume.getFileName())
+                        .fileUrl(resume.getFileUrl())
+                        .uploadedAt(resume.getUploadedAt())
+                        .build())
+                .collect(Collectors.toList());
+        return ResponseEntity.ok(responses);
     }
 
     @PostMapping("/upload")

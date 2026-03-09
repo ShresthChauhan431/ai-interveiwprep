@@ -6,6 +6,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -18,6 +19,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * REST controller for serving and accepting locally stored files.
@@ -67,6 +70,39 @@ public class FileController {
         log.info("FileController initialized with storage root: {}", this.storageRoot);
     }
 
+    // AUDIT-FIX: Pattern to extract userId from file storage keys (e.g., "interviews/{userId}/..." or "resumes/{userId}/...")
+    private static final Pattern OWNER_PATH_PATTERN = Pattern.compile("^(?:interviews|resumes)/(\\d+)/");
+
+    /**
+     * AUDIT-FIX: Validate that the authenticated user owns the requested file.
+     * File keys follow the pattern "interviews/{userId}/..." or "resumes/{userId}/...".
+     * If the userId in the path does not match the authenticated user, access is denied.
+     *
+     * @param key     the storage key
+     * @param request the HTTP request (userId set by JwtAuthenticationFilter)
+     * @return true if the user is authorized, false otherwise
+     */
+    private boolean validateFileOwnership(String key, HttpServletRequest request) {
+        Object userIdAttr = request.getAttribute("userId");
+        if (userIdAttr == null) {
+            log.warn("File ownership check failed: no userId in request for key='{}'", key);
+            return false;
+        }
+        Long currentUserId = (Long) userIdAttr;
+
+        Matcher matcher = OWNER_PATH_PATTERN.matcher(key);
+        if (matcher.find()) {
+            Long fileOwnerId = Long.parseLong(matcher.group(1));
+            if (!fileOwnerId.equals(currentUserId)) {
+                log.warn("File ownership check failed: user={} attempted to access file owned by user={}, key='{}'",
+                        currentUserId, fileOwnerId, key);
+                return false;
+            }
+        }
+        // If the key doesn't match the pattern, allow access (e.g., shared assets)
+        return true;
+    }
+
     /**
      * Serve a locally stored file.
      *
@@ -81,6 +117,11 @@ public class FileController {
     @GetMapping("/**")
     public ResponseEntity<Resource> serveFile(HttpServletRequest request) {
         String key = extractKey(request, "/api/files/");
+
+        // AUDIT-FIX: Verify the authenticated user owns the requested file
+        if (!validateFileOwnership(key, request)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
 
         // P2-6: Resolve against absolute root, then normalize to collapse any ".." segments
         Path filePath = storageRoot.resolve(key).normalize();
@@ -135,6 +176,11 @@ public class FileController {
             @RequestBody(required = false) byte[] body) {
         String key = extractKey(request, "/api/files/upload-raw/");
 
+        // AUDIT-FIX: Verify the authenticated user owns the upload path
+        if (!validateFileOwnership(key, request)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", "Forbidden"));
+        }
+
         // P2-6: Use absolute path for traversal check
         Path filePath = storageRoot.resolve(key).normalize();
 
@@ -168,6 +214,11 @@ public class FileController {
     public ResponseEntity<Map<String, String>> uploadFile(HttpServletRequest request,
             @RequestParam("file") MultipartFile file) {
         String key = extractKey(request, "/api/files/upload/");
+
+        // AUDIT-FIX: Verify the authenticated user owns the upload path
+        if (!validateFileOwnership(key, request)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", "Forbidden"));
+        }
 
         // P2-6: Use absolute path for traversal check
         Path filePath = storageRoot.resolve(key).normalize();

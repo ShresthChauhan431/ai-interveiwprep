@@ -2,6 +2,11 @@ import axios, { AxiosError, InternalAxiosRequestConfig } from "axios";
 import { ApiError } from "../types";
 import { API_BASE_URL, TOKEN_KEY } from "../utils/constants";
 
+// ════════════════════════════════════════════════════════════════════════════
+// AUDIT-FIX: JWT storage migrated from localStorage to sessionStorage.
+// See AuthContext.tsx for full XSS risk documentation.
+// ════════════════════════════════════════════════════════════════════════════
+
 // ============================================================
 // Base Configuration
 // ============================================================
@@ -20,8 +25,14 @@ const api = axios.create({
 
 api.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
-    const token = localStorage.getItem(TOKEN_KEY);
-    if (token && config.headers) {
+    // AUDIT-FIX: Read token from sessionStorage (was localStorage) to reduce XSS exposure window
+    const token = sessionStorage.getItem(TOKEN_KEY);
+    // AUDIT-FIX: Only attach JWT to requests targeting our own backend API, not third-party URLs
+    const isOwnBackend =
+      !config.url ||
+      config.url.startsWith("/") ||
+      config.url.startsWith(API_BASE_URL);
+    if (token && config.headers && isOwnBackend) {
       config.headers.Authorization = `Bearer ${token}`;
     }
     return config;
@@ -83,16 +94,17 @@ api.interceptors.response.use(
 // Auth Token Helpers
 // ============================================================
 
+// AUDIT-FIX: All token storage migrated from localStorage to sessionStorage
 export const setAuthToken = (token: string): void => {
-  localStorage.setItem(TOKEN_KEY, token);
+  sessionStorage.setItem(TOKEN_KEY, token); // AUDIT-FIX: was localStorage
 };
 
 export const removeAuthToken = (): void => {
-  localStorage.removeItem(TOKEN_KEY);
+  sessionStorage.removeItem(TOKEN_KEY); // AUDIT-FIX: was localStorage
 };
 
 export const isAuthenticated = (): boolean => {
-  return !!localStorage.getItem(TOKEN_KEY);
+  return !!sessionStorage.getItem(TOKEN_KEY); // AUDIT-FIX: was localStorage
 };
 
 export default api;

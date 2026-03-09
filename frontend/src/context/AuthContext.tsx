@@ -1,3 +1,28 @@
+// ════════════════════════════════════════════════════════════════════════════
+// AUDIT-FIX: XSS Risk Documentation — JWT Storage
+// ════════════════════════════════════════════════════════════════════════════
+// The JWT token was previously stored in `localStorage`, which is accessible
+// to ANY JavaScript running on the page — including injected scripts from XSS
+// attacks. An attacker who achieves XSS can exfiltrate the token and use it
+// from any device until it expires.
+//
+// Migration applied: localStorage → sessionStorage
+//   - sessionStorage is still accessible to JS (not immune to XSS), but it is
+//     scoped to the browser tab and cleared when the tab is closed, reducing
+//     the window of exposure.
+//   - This is a *minimum* improvement. The ideal fix is to store the JWT in an
+//     httpOnly + Secure + SameSite=Strict cookie, which is completely invisible
+//     to JavaScript. That requires backend changes (Set-Cookie header on login,
+//     cookie-based auth filter) and is flagged as MANUAL ACTION REQUIRED.
+//
+// ⚠️ MANUAL ACTION REQUIRED: Migrate JWT storage to httpOnly cookies.
+//    This requires:
+//    1. Backend: Return JWT via Set-Cookie header (httpOnly, Secure, SameSite=Strict)
+//    2. Backend: Read JWT from cookie in JwtAuthenticationFilter instead of Authorization header
+//    3. Frontend: Remove all manual token handling; let the browser manage cookies
+//    4. CSRF protection must be re-enabled when using cookie-based auth
+// ════════════════════════════════════════════════════════════════════════════
+
 import React, {
   createContext,
   useCallback,
@@ -62,6 +87,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [isLoading, setIsLoading] = useState(true);
 
   // Initialize — check if token exists and fetch profile
+  // AUDIT-FIX: Token is now read from sessionStorage (was localStorage)
   useEffect(() => {
     const token = authService.getStoredToken();
     if (token) {
@@ -102,9 +128,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const register = useCallback(async (data: RegisterRequest) => {
     const response = await authService.register(data);
-    // Save token so subsequent API calls are authenticated
+    // AUDIT-FIX: Save token to sessionStorage (was localStorage) — see XSS risk note at top of file
     if (response.token) {
-      localStorage.setItem("auth_token", response.token);
+      sessionStorage.setItem("auth_token", response.token);
       const { setAuthToken } = await import("../services/api.service");
       setAuthToken(response.token);
     }

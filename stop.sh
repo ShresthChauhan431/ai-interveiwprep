@@ -17,21 +17,43 @@ print_info() { echo -e "${BLUE}ℹ $1${NC}"; }
 echo -e "${BLUE}Stopping AI Interview Platform services...${NC}\n"
 
 # Stop Backend (Spring Boot on port 8081)
+# AUDIT-FIX: Use SIGTERM first for graceful shutdown (Spring Boot flushes DB connections,
+# completes in-flight requests, runs @PreDestroy hooks). Only escalate to SIGKILL after timeout.
 print_info "Stopping Backend..."
 BACKEND_PID=$(lsof -ti:8081)
 if [ -n "$BACKEND_PID" ]; then
-    kill -9 $BACKEND_PID 2>/dev/null
-    print_success "Backend stopped (PID: $BACKEND_PID)"
+    kill -15 $BACKEND_PID 2>/dev/null
+    # Wait up to 10 seconds for graceful shutdown
+    for i in {1..10}; do
+        if ! kill -0 $BACKEND_PID 2>/dev/null; then
+            break
+        fi
+        sleep 1
+    done
+    # SIGKILL if still running after graceful timeout
+    if kill -0 $BACKEND_PID 2>/dev/null; then
+        kill -9 $BACKEND_PID 2>/dev/null
+        print_success "Backend force-stopped (PID: $BACKEND_PID)"
+    else
+        print_success "Backend stopped gracefully (PID: $BACKEND_PID)"
+    fi
 else
     print_info "Backend not running"
 fi
 
 # Stop Frontend (React on port 3002)
+# AUDIT-FIX: Use SIGTERM for graceful shutdown before SIGKILL
 print_info "Stopping Frontend..."
 FRONTEND_PID=$(lsof -ti:3002)
 if [ -n "$FRONTEND_PID" ]; then
-    kill -9 $FRONTEND_PID 2>/dev/null
-    print_success "Frontend stopped (PID: $FRONTEND_PID)"
+    kill -15 $FRONTEND_PID 2>/dev/null
+    sleep 2
+    if kill -0 $FRONTEND_PID 2>/dev/null; then
+        kill -9 $FRONTEND_PID 2>/dev/null
+        print_success "Frontend force-stopped (PID: $FRONTEND_PID)"
+    else
+        print_success "Frontend stopped gracefully (PID: $FRONTEND_PID)"
+    fi
 else
     print_info "Frontend not running"
 fi

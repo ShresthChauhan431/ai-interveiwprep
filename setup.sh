@@ -95,7 +95,7 @@ if command_exists ollama; then
     print_success "Ollama found"
 else
     print_warning "Ollama not found. Installing..."
-    
+
     # Detect OS and install Ollama
     if [[ "$OSTYPE" == "darwin"* ]]; then
         if command_exists brew; then
@@ -127,7 +127,7 @@ else
     print_info "Starting Ollama server..."
     ollama serve > /dev/null 2>&1 &
     sleep 3
-    
+
     if curl -s http://localhost:11434/api/tags >/dev/null 2>&1; then
         print_success "Ollama server started"
     else
@@ -156,11 +156,11 @@ if command_exists mysql; then
     print_info "Please enter your MySQL root password:"
     read -s MYSQL_ROOT_PASSWORD
     echo
-    
+
     # Test MySQL connection
     if mysql -u root -p"$MYSQL_ROOT_PASSWORD" -e "SELECT 1" >/dev/null 2>&1; then
         print_success "MySQL connection successful"
-        
+
         # Check if database exists
         if mysql -u root -p"$MYSQL_ROOT_PASSWORD" -e "USE interview_platform" >/dev/null 2>&1; then
             print_warning "Database 'interview_platform' already exists"
@@ -183,17 +183,89 @@ fi
 
 print_header "Configuring Backend"
 
-# Check if .env exists
+# AUDIT-FIX: Ensure .env is created from .env.example if it doesn't exist yet.
+# Previously the script assumed .env already existed, which caused the sed
+# command below to fail silently on a fresh clone.
 if [ -f "backend/.env" ]; then
     print_warning "backend/.env already exists. Backing up to backend/.env.backup"
     cp backend/.env backend/.env.backup
+elif [ -f "backend/.env.example" ]; then
+    print_info "Creating backend/.env from .env.example..."
+    cp backend/.env.example backend/.env
+    print_success "backend/.env created from .env.example"
+else
+    print_info "Creating backend/.env with required variables..."
+    cat > backend/.env << 'ENVEOF'
+# ═══════════════════════════════════════════════════════════════
+# AI Interview Platform — Environment Variables
+# ═══════════════════════════════════════════════════════════════
+
+# ── Database ──────────────────────────────────────────────────
+DB_HOST=localhost
+DB_PORT=3306
+DB_NAME=interview_platform
+DB_USER=user
+DB_PASSWORD=password
+
+# ── JWT (REQUIRED — no default) ──────────────────────────────
+# Generate with: openssl rand -base64 64
+JWT_SECRET=
+JWT_EXPIRATION=3600000
+
+# ── CORS (REQUIRED — no default after security audit) ────────
+CORS_ALLOWED_ORIGINS=http://localhost:3002
+
+# ── Storage ───────────────────────────────────────────────────
+# AUDIT-FIX: Use an absolute path in production (e.g. /var/data/uploads)
+STORAGE_PATH=./uploads
+
+# ── Ollama ────────────────────────────────────────────────────
+OLLAMA_API_URL=http://localhost:11434/api/chat
+OLLAMA_MODEL=llama3
+
+# ── External API Keys (add your real keys) ────────────────────
+ELEVENLABS_API_KEY=your_elevenlabs_api_key_here
+DID_API_KEY=your_did_api_key_here
+ASSEMBLYAI_API_KEY=your_assemblyai_api_key_here
+ENVEOF
+    print_success "backend/.env created with template values"
 fi
 
 # Update database password in .env
 if [ -n "$MYSQL_ROOT_PASSWORD" ]; then
     sed -i.bak "s/DB_PASSWORD=.*/DB_PASSWORD=$MYSQL_ROOT_PASSWORD/" backend/.env
-    rm backend/.env.bak
+    rm -f backend/.env.bak
     print_success "Database password configured"
+fi
+
+# AUDIT-FIX: Generate a secure JWT_SECRET if not already set.
+# After the security audit, JWT_SECRET has no default fallback —
+# the backend will refuse to start without one.
+CURRENT_JWT=$(grep '^JWT_SECRET=' backend/.env | cut -d'=' -f2-)
+if [ -z "$CURRENT_JWT" ] || [ "$CURRENT_JWT" = "your_jwt_secret_here" ]; then
+    print_info "Generating secure JWT_SECRET (64+ chars for HS512)..."
+    NEW_JWT=$(openssl rand -base64 64 | tr -d '\n')
+    sed -i.bak "s|^JWT_SECRET=.*|JWT_SECRET=${NEW_JWT}|" backend/.env
+    rm -f backend/.env.bak
+    print_success "JWT_SECRET generated and saved to backend/.env"
+else
+    print_success "JWT_SECRET already set"
+fi
+
+# AUDIT-FIX: Ensure CORS_ALLOWED_ORIGINS is present and non-empty.
+# After the security audit, there is no default — the backend fails fast if missing.
+CURRENT_CORS=$(grep '^CORS_ALLOWED_ORIGINS=' backend/.env | cut -d'=' -f2-)
+if [ -z "$CURRENT_CORS" ]; then
+    print_info "Setting CORS_ALLOWED_ORIGINS to http://localhost:3002 (local dev default)..."
+    if grep -q '^CORS_ALLOWED_ORIGINS=' backend/.env; then
+        sed -i.bak "s|^CORS_ALLOWED_ORIGINS=.*|CORS_ALLOWED_ORIGINS=http://localhost:3002|" backend/.env
+        rm -f backend/.env.bak
+    else
+        echo "CORS_ALLOWED_ORIGINS=http://localhost:3002" >> backend/.env
+    fi
+    print_success "CORS_ALLOWED_ORIGINS set to http://localhost:3002"
+else
+    print_success "CORS_ALLOWED_ORIGINS already set: $CURRENT_CORS"
 fi
 
 # Create uploads directory
@@ -204,9 +276,12 @@ print_success "Upload directory created"
 # Check API keys
 print_info "\nAPI Key Configuration:"
 print_warning "You need to manually add API keys to backend/.env:"
-echo -e "  1. ELEVENLABS_API_KEY - Get from https://elevenlabs.io/"
-echo -e "  2. DID_API_KEY - Get from https://www.d-id.com/"
-echo -e "  3. ASSEMBLYAI_API_KEY - Get from https://www.assemblyai.com/"
+echo -e "  1. ELEVENLABS_API_KEY  - Get from https://elevenlabs.io/"
+echo -e "  2. DID_API_KEY         - Get from https://www.d-id.com/"
+echo -e "  3. ASSEMBLYAI_API_KEY  - Get from https://www.assemblyai.com/"
+echo -e ""
+echo -e "  ${GREEN}✓ JWT_SECRET${NC}          - Auto-generated (64+ chars for HS512)"
+echo -e "  ${GREEN}✓ CORS_ALLOWED_ORIGINS${NC} - Set to http://localhost:3002"
 echo -e "\nEdit backend/.env and replace 'your_*_api_key_here' with actual keys."
 
 read -p "Press Enter when you've added the API keys..."

@@ -9,6 +9,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.time.Instant;
 
@@ -34,13 +35,16 @@ public class VideoStorageService {
 
     private static final Logger log = LoggerFactory.getLogger(VideoStorageService.class);
 
-    private final String storageRootPath;
+    // AUDIT-FIX: Use canonicalized absolute Path instead of raw String for all file operations
+    private final Path basePath;
     private final String appBaseUrl;
 
     public VideoStorageService(@Qualifier("storageRootPath") String storageRootPath,
             @Qualifier("appBaseUrl") String appBaseUrl) {
-        this.storageRootPath = storageRootPath;
+        // AUDIT-FIX: Canonicalize to absolute normalized path at construction time
+        this.basePath = Paths.get(storageRootPath).toAbsolutePath().normalize();
         this.appBaseUrl = appBaseUrl;
+        log.info("VideoStorageService initialized with basePath: {}", this.basePath);
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -62,7 +66,8 @@ public class VideoStorageService {
                 userId, interviewId, questionId, timestamp);
 
         try {
-            Path filePath = resolveAndCreateDirs(key);
+            Path filePath = resolveAndValidate(key); // AUDIT-FIX: Use validated path resolution
+            Files.createDirectories(filePath.getParent());
             Files.copy(file.getInputStream(), filePath, StandardCopyOption.REPLACE_EXISTING);
             log.info("Uploaded video to local storage: key={}, user={}", key, userId);
             return key;
@@ -89,7 +94,8 @@ public class VideoStorageService {
         String key = String.format("resumes/%d/resume_%s%s", userId, timestamp, extension);
 
         try {
-            Path filePath = resolveAndCreateDirs(key);
+            Path filePath = resolveAndValidate(key); // AUDIT-FIX: Use validated path resolution
+            Files.createDirectories(filePath.getParent());
             Files.copy(file.getInputStream(), filePath, StandardCopyOption.REPLACE_EXISTING);
             log.info("Uploaded resume to local storage: key={}, user={}", key, userId);
             return key;
@@ -111,7 +117,8 @@ public class VideoStorageService {
      */
     public String uploadBytes(byte[] data, String key, String contentType) {
         try {
-            Path filePath = resolveAndCreateDirs(key);
+            Path filePath = resolveAndValidate(key); // AUDIT-FIX: Use validated path resolution
+            Files.createDirectories(filePath.getParent());
             Files.write(filePath, data);
             log.info("Uploaded bytes to local storage: key={}, size={}, type={}", key, data.length, contentType);
             return key;
@@ -207,7 +214,12 @@ public class VideoStorageService {
      */
     public void deleteFile(String key) {
         try {
-            Path filePath = Path.of(storageRootPath).resolve(key).normalize();
+            // AUDIT-FIX: Use basePath for all file operations with path traversal check
+            Path filePath = basePath.resolve(key).normalize();
+            if (!filePath.startsWith(basePath)) {
+                log.warn("Path traversal attempt blocked on delete: key='{}', resolved='{}'", key, filePath);
+                return;
+            }
             if (Files.deleteIfExists(filePath)) {
                 log.info("Deleted file: key={}", key);
             } else {
@@ -226,7 +238,12 @@ public class VideoStorageService {
      * @return true if the file exists
      */
     public boolean fileExists(String key) {
-        Path filePath = Path.of(storageRootPath).resolve(key).normalize();
+        // AUDIT-FIX: Use basePath for all file operations with path traversal check
+        Path filePath = basePath.resolve(key).normalize();
+        if (!filePath.startsWith(basePath)) {
+            log.warn("Path traversal attempt blocked on fileExists: key='{}', resolved='{}'", key, filePath);
+            return false;
+        }
         return Files.exists(filePath);
     }
 
@@ -237,11 +254,19 @@ public class VideoStorageService {
     // ════════════════════════════════════════════════════════════════
 
     /**
-     * Resolve a key to a full file path and create parent directories.
+     * AUDIT-FIX: Resolve a key to a full file path against the canonical basePath
+     * and validate it stays within the storage root (path traversal prevention).
+     *
+     * @param key the relative storage key
+     * @return the resolved absolute path
+     * @throws IllegalArgumentException if the resolved path escapes the basePath
      */
-    private Path resolveAndCreateDirs(String key) throws IOException {
-        Path filePath = Path.of(storageRootPath).resolve(key).normalize();
-        Files.createDirectories(filePath.getParent());
+    private Path resolveAndValidate(String key) {
+        Path filePath = basePath.resolve(key).normalize();
+        if (!filePath.startsWith(basePath)) {
+            throw new IllegalArgumentException(
+                    "Path traversal blocked: key='" + key + "' resolves outside storage root");
+        }
         return filePath;
     }
 }

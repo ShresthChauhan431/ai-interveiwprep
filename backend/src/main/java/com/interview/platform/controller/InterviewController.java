@@ -2,6 +2,7 @@ package com.interview.platform.controller;
 
 import com.interview.platform.dto.*;
 import com.interview.platform.model.Feedback;
+import com.interview.platform.model.Interview;
 import com.interview.platform.model.InterviewStatus;
 import com.interview.platform.repository.FeedbackRepository;
 import com.interview.platform.repository.InterviewRepository;
@@ -11,6 +12,10 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -62,6 +67,50 @@ public class InterviewController {
         this.feedbackRepository = feedbackRepository;
         this.interviewRepository = interviewRepository;
         this.sseEmitterService = sseEmitterService;
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // 0. GET /api/interviews (AUDIT-FIX: paginated interview list)
+    // ════════════════════════════════════════════════════════════════
+
+    /**
+     * AUDIT-FIX (Section 9a): Paginated list of the authenticated user's interviews.
+     *
+     * <p>Returns a {@link Page} of lightweight interview summary DTOs filtered
+     * to the current user only. Supports standard Spring Data pagination
+     * parameters: {@code page}, {@code size}, {@code sort}.</p>
+     *
+     * @param httpRequest the HTTP request (userId extracted from JWT)
+     * @param pageable    pagination parameters (default: page=0, size=20, sort=startedAt,desc)
+     * @return a page of interview summaries
+     */
+    @GetMapping
+    public ResponseEntity<Page<InterviewDTO>> listInterviews(
+            HttpServletRequest httpRequest,
+            @PageableDefault(size = 20, sort = "startedAt", direction = Sort.Direction.DESC) Pageable pageable) {
+
+        Long userId = getUserIdFromRequest(httpRequest);
+        log.info("Listing interviews — user: {}, page: {}, size: {}", userId, pageable.getPageNumber(), pageable.getPageSize());
+
+        // AUDIT-FIX: Filtered to authenticated user's interviews only via repository query
+        Page<Interview> interviewPage = interviewRepository.findByUserIdOrderByStartedAtDesc(userId, pageable);
+
+        Page<InterviewDTO> dtoPage = interviewPage.map(interview -> {
+            InterviewDTO dto = new InterviewDTO();
+            dto.setInterviewId(interview.getId());
+            dto.setStatus(interview.getStatus().name());
+            dto.setType(interview.getType().name());
+            dto.setOverallScore(interview.getOverallScore());
+            dto.setStartedAt(interview.getStartedAt());
+            dto.setCompletedAt(interview.getCompletedAt());
+            if (interview.getJobRole() != null) {
+                dto.setJobRoleTitle(interview.getJobRole().getTitle());
+            }
+            dto.setQuestions(null); // Lightweight — no question details in list view
+            return dto;
+        });
+
+        return ResponseEntity.ok(dtoPage);
     }
 
     // ════════════════════════════════════════════════════════════════

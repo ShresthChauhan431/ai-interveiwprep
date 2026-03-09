@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.interview.platform.dto.FeedbackDTO;
 import com.interview.platform.model.Feedback;
 import com.interview.platform.model.Interview;
+import com.interview.platform.model.InterviewStatus;
 import com.interview.platform.model.Response;
 import com.interview.platform.repository.FeedbackRepository;
 import com.interview.platform.repository.InterviewRepository;
@@ -143,9 +144,19 @@ public class AIFeedbackService {
         // Step 5: Call Ollama (with Resilience4j retry + circuit breaker)
         String aiResponse = callOllamaWithResilience(prompt);
 
-        // Step 6: Parse feedback
-        FeedbackDTO feedbackDTO = parseFeedbackResponse(aiResponse);
-        // -------------------------
+        // AUDIT-FIX: Wrap parse step in try-catch — malformed Ollama response logs warning and sets interview to FAILED
+        FeedbackDTO feedbackDTO;
+        try {
+            // Step 6: Parse feedback
+            feedbackDTO = parseFeedbackResponse(aiResponse);
+        } catch (Exception e) {
+            log.warn("AUDIT-FIX: Malformed Ollama feedback response for interview ID: {}. "
+                    + "Setting interview to FAILED. Raw response: {}", interviewId,
+                    aiResponse != null && aiResponse.length() > 500 ? aiResponse.substring(0, 500) + "..." : aiResponse, e);
+            interview.transitionTo(InterviewStatus.FAILED);
+            interviewRepository.save(interview);
+            throw new RuntimeException("Failed to parse AI feedback response for interview " + interviewId, e);
+        }
 
         // Step 7: Create and save Feedback entity
         Feedback feedback = createFeedbackEntity(interview, feedbackDTO);
@@ -193,6 +204,10 @@ public class AIFeedbackService {
                 transcription = "[No response transcription available]";
             }
 
+            // AUDIT-FIX: Sanitize transcription text to mitigate prompt injection via user speech
+            transcription = sanitizePromptInput(transcription);
+            questionText = sanitizePromptInput(questionText);
+
             qaPairs.append(String.format("[Q%d: %s, A%d: %s]\n",
                     questionNumber, questionText, questionNumber, transcription));
             questionNumber++;
@@ -231,6 +246,43 @@ public class AIFeedbackService {
     // ════════════════════════════════════════════════════════════════
     // Ollama API Call (with Resilience4j)
     // ════════════════════════════════════════════════════════════════
+
+    /**
+     * AUDIT-FIX: Sanitize text before interpolation into LLM prompts.
+     * Strips prompt injection patterns (case-insensitive) and truncates to 4000 chars.
+     *
+     * @param text the raw text to sanitize
+     * @return sanitized text safe for prompt interpolation
+     */
+    private String sanitizePromptInput(String text) {
+        if (text == null || text.isBlank()) {
+            return text;
+        }
+
+        // AUDIT-FIX: Truncate to 4000 characters max
+        String sanitized = text.length() > 4_000 ? text.substring(0, 4_000) : text;
+
+        // AUDIT-FIX: Strip common prompt injection patterns (case-insensitive)
+        sanitized = sanitized.replaceAll("(?i)ignore\\s+(all\\s+)?previous\\s+instructions", "")
+                .replaceAll("(?i)system\\s*:", "")
+                .replaceAll("(?i)<\\|im_start\\|>", "")
+                .replaceAll("(?i)<\\|im_end\\|>", "")
+                .replaceAll("(?i)<\\|im_sep\\|>", "")
+                .replaceAll("###\\s*", "")
+                .replaceAll("(?i)\\[INST\\]", "")
+                .replaceAll("(?i)\\[/INST\\]", "")
+                .replaceAll("(?i)<<SYS>>", "")
+                .replaceAll("(?i)<</SYS>>", "")
+                .replaceAll("(?i)you\\s+are\\s+now\\s+", "")
+                .replaceAll("(?i)disregard\\s+(all\\s+)?prior\\s+", "")
+                .replaceAll("(?i)forget\\s+(all\\s+)?previous\\s+", "")
+                .replaceAll("(?i)new\\s+instructions?\\s*:", "")
+                .replace("```", "")
+                .replace("<|", "")
+                .replace("|>", "");
+
+        return sanitized;
+    }
 
     /**
      * Call Ollama endpoint with Resilience4j retry and circuit breaker.
