@@ -151,6 +151,19 @@
 			<artifactId>caffeine</artifactId>
 		</dependency>
 
+		<!-- ─── Environment Variables (.env loader) ───────────────── -->
+		<!--
+		    spring-dotenv automatically loads backend/.env into
+		    Spring's Environment so that ${VAR} placeholders in
+		    application.properties resolve without requiring an
+		    external 'source .env' step.
+		-->
+		<dependency>
+			<groupId>me.paulschwarz</groupId>
+			<artifactId>spring-dotenv</artifactId>
+			<version>4.0.0</version>
+		</dependency>
+
 		<!-- ─── Rate Limiting ─────────────────────────────────────── -->
 		<!--
 		    Bucket4j implements token-bucket rate limiting.
