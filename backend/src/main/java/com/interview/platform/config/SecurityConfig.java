@@ -1,5 +1,8 @@
 package com.interview.platform.config;
 
+import jakarta.annotation.PostConstruct;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -40,6 +43,8 @@ import java.util.List;
 @EnableWebSecurity
 public class SecurityConfig {
 
+    private static final Logger log = LoggerFactory.getLogger(SecurityConfig.class);
+
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
 
     /**
@@ -52,6 +57,29 @@ public class SecurityConfig {
 
     public SecurityConfig(JwtAuthenticationFilter jwtAuthenticationFilter) {
         this.jwtAuthenticationFilter = jwtAuthenticationFilter;
+    }
+
+    /**
+     * P3-12: Fail-fast validation for CORS configuration.
+     *
+     * <p>{@code setAllowCredentials(true)} is incompatible with wildcard
+     * origins ({@code *}). Spring will throw an error at runtime on the first
+     * CORS preflight request, but only at that point — not at startup. This
+     * means an operator deploying with {@code CORS_ALLOWED_ORIGINS=*} won't
+     * discover the misconfiguration until the first browser request.</p>
+     *
+     * <p>This {@code @PostConstruct} check catches the problem at startup,
+     * giving the operator immediate feedback in the logs.</p>
+     */
+    @PostConstruct
+    public void validateCorsConfig() {
+        if (allowedOrigins.contains("*")) {
+            throw new IllegalStateException(
+                    "CORS_ALLOWED_ORIGINS cannot contain '*' when credentials are enabled "
+                            + "(setAllowCredentials=true). Specify explicit origins instead, e.g.: "
+                            + "CORS_ALLOWED_ORIGINS=http://localhost:3000,https://myapp.example.com");
+        }
+        log.info("CORS configured with allowed origins: {}", allowedOrigins);
     }
 
     @Bean
@@ -72,8 +100,9 @@ public class SecurityConfig {
                         .requestMatchers("/api/auth/**").permitAll()
                         // Job roles list is read-only and needed before login on the start screen
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/job-roles").permitAll()
-                        // File serving — stored files accessible without auth
-                        .requestMatchers("/api/files/**").permitAll()
+                        // File serving — requires authentication + ownership checks in FileController
+                        // Previously permitAll() which exposed all videos/resumes to unauthenticated users (P0-2/P0-3)
+                        .requestMatchers("/api/files/**").authenticated()
                         // Actuator — health endpoint is public (details are gated
                         // by show-details=when_authorized in properties), but all
                         // other actuator endpoints require ADMIN role.

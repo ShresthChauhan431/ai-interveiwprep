@@ -5,6 +5,8 @@ import jakarta.persistence.*;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 @Entity
 @Table(name = "interviews", indexes = {
@@ -28,6 +30,10 @@ public class Interview {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "job_role_id", nullable = false)
     private JobRole jobRole;
+
+    @Version
+    @Column(name = "version", nullable = false)
+    private Long version = 0L;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20, columnDefinition = "VARCHAR(20)")
@@ -71,6 +77,24 @@ public class Interview {
         this.completedAt = completedAt;
     }
 
+    /**
+     * Valid state transitions for the interview lifecycle.
+     *
+     * <pre>
+     * CREATED ──► GENERATING_VIDEOS ──► IN_PROGRESS ──► PROCESSING ──► COMPLETED
+     *                    │                    │               │
+     *                    └────────────────────┴───────────────┴──────► FAILED
+     * </pre>
+     */
+    private static final Map<InterviewStatus, Set<InterviewStatus>> VALID_TRANSITIONS = Map.of(
+            InterviewStatus.CREATED, Set.of(InterviewStatus.GENERATING_VIDEOS, InterviewStatus.FAILED),
+            InterviewStatus.GENERATING_VIDEOS, Set.of(InterviewStatus.IN_PROGRESS, InterviewStatus.FAILED),
+            InterviewStatus.IN_PROGRESS, Set.of(InterviewStatus.PROCESSING, InterviewStatus.FAILED),
+            InterviewStatus.PROCESSING, Set.of(InterviewStatus.COMPLETED, InterviewStatus.FAILED),
+            InterviewStatus.COMPLETED, Set.of(),
+            InterviewStatus.FAILED, Set.of()
+    );
+
     @PrePersist
     protected void onCreate() {
         startedAt = LocalDateTime.now();
@@ -79,7 +103,35 @@ public class Interview {
         }
     }
 
+    /**
+     * Transition the interview to a new status with state machine enforcement.
+     *
+     * <p>Validates that the transition is legal according to the state machine
+     * before applying it. Throws {@link IllegalStateException} if the transition
+     * is invalid, preventing accidental regressions (e.g., COMPLETED → IN_PROGRESS).</p>
+     *
+     * @param target the desired new status
+     * @throws IllegalStateException if the transition is not allowed
+     */
+    public void transitionTo(InterviewStatus target) {
+        Set<InterviewStatus> allowed = VALID_TRANSITIONS.getOrDefault(this.status, Set.of());
+        if (!allowed.contains(target)) {
+            throw new IllegalStateException(
+                    String.format("Invalid interview state transition: %s → %s (allowed: %s)",
+                            this.status, target, allowed));
+        }
+        this.status = target;
+    }
+
     // Getters and Setters
+    public Long getVersion() {
+        return version;
+    }
+
+    public void setVersion(Long version) {
+        this.version = version;
+    }
+
     public Long getId() {
         return id;
     }

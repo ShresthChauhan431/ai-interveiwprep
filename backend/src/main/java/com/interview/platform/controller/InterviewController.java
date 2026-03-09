@@ -97,7 +97,7 @@ public class InterviewController {
      * </p>
      *
      * <h3>Frontend Usage:</h3>
-     * 
+     *
      * <pre>{@code
      * // 1. Get presigned URL
      * const res = await fetch(`/api/interviews/${interviewId}/upload-url?questionId=${qId}`);
@@ -374,7 +374,7 @@ public class InterviewController {
                         "Interview not found or does not belong to user: " + interviewId));
 
         log.info("SSE connection opened: interviewId={}, userId={}", interviewId, userId);
-        return sseEmitterService.register(interviewId);
+        return sseEmitterService.register(interviewId, userId);
     }
 
     // ════════════════════════════════════════════════════════════════

@@ -26,6 +26,25 @@ import java.util.Map;
  * Replaces S3 presigned URLs — the frontend accesses files via
  * {@code GET /api/files/**} and uploads via {@code PUT /api/files/upload/**}.
  * </p>
+ *
+ * <h3>Audit Fixes Applied:</h3>
+ * <ul>
+ *   <li><strong>P0-2 / P0-3:</strong> File endpoints are no longer {@code permitAll()}.
+ *       {@code SecurityConfig} now requires authentication for {@code /api/files/**}.
+ *       Ownership validation should be added as a follow-up.</li>
+ *   <li><strong>P2-6:</strong> Path traversal check now uses {@code toAbsolutePath()}
+ *       before {@code normalize()} to prevent bypasses when {@code storageRootPath}
+ *       is a relative path (e.g., {@code ./uploads}). Previously, the relative
+ *       path comparison could be tricked because
+ *       {@code Path.of("./uploads").normalize()} returns {@code "uploads"} but
+ *       {@code Path.of("./uploads").resolve("../../../etc/passwd").normalize()}
+ *       returns {@code "../../etc/passwd"}, which does NOT start with {@code "uploads"}
+ *       — the check worked by accident but was fragile. Using absolute paths makes
+ *       the check robust on all platforms.</li>
+ *   <li><strong>P2-2:</strong> The storage root is canonicalized to an absolute path
+ *       at construction time, ensuring consistent behavior regardless of the working
+ *       directory at startup or across different deployment environments.</li>
+ * </ul>
  */
 @RestController
 @RequestMapping("/api/files")
@@ -33,10 +52,19 @@ public class FileController {
 
     private static final Logger log = LoggerFactory.getLogger(FileController.class);
 
-    private final String storageRootPath;
+    /**
+     * Canonicalized absolute path to the storage root directory.
+     * All file operations are resolved against this path and validated
+     * to stay within its subtree (path traversal prevention).
+     */
+    private final Path storageRoot;
 
     public FileController(@Qualifier("storageRootPath") String storageRootPath) {
-        this.storageRootPath = storageRootPath;
+        // P2-2 / P2-6: Canonicalize to absolute path at construction time.
+        // This ensures Path.startsWith() checks are reliable regardless of
+        // whether the configured path is relative (e.g., "./uploads") or absolute.
+        this.storageRoot = Path.of(storageRootPath).toAbsolutePath().normalize();
+        log.info("FileController initialized with storage root: {}", this.storageRoot);
     }
 
     /**
@@ -53,10 +81,13 @@ public class FileController {
     @GetMapping("/**")
     public ResponseEntity<Resource> serveFile(HttpServletRequest request) {
         String key = extractKey(request, "/api/files/");
-        Path filePath = Path.of(storageRootPath).resolve(key).normalize();
 
-        // Security: prevent path traversal
-        if (!filePath.startsWith(Path.of(storageRootPath).normalize())) {
+        // P2-6: Resolve against absolute root, then normalize to collapse any ".." segments
+        Path filePath = storageRoot.resolve(key).normalize();
+
+        // Security: prevent path traversal — resolved path must remain under storage root
+        if (!filePath.startsWith(storageRoot)) {
+            log.warn("Path traversal attempt blocked: key='{}', resolved='{}'", key, filePath);
             return ResponseEntity.badRequest().build();
         }
 
@@ -103,9 +134,12 @@ public class FileController {
     public ResponseEntity<Map<String, String>> uploadFileRaw(HttpServletRequest request,
             @RequestBody(required = false) byte[] body) {
         String key = extractKey(request, "/api/files/upload-raw/");
-        Path filePath = Path.of(storageRootPath).resolve(key).normalize();
 
-        if (!filePath.startsWith(Path.of(storageRootPath).normalize())) {
+        // P2-6: Use absolute path for traversal check
+        Path filePath = storageRoot.resolve(key).normalize();
+
+        if (!filePath.startsWith(storageRoot)) {
+            log.warn("Path traversal attempt blocked on upload-raw: key='{}', resolved='{}'", key, filePath);
             return ResponseEntity.badRequest().body(Map.of("error", "Invalid path"));
         }
         if (body == null || body.length == 0) {
@@ -134,9 +168,12 @@ public class FileController {
     public ResponseEntity<Map<String, String>> uploadFile(HttpServletRequest request,
             @RequestParam("file") MultipartFile file) {
         String key = extractKey(request, "/api/files/upload/");
-        Path filePath = Path.of(storageRootPath).resolve(key).normalize();
 
-        if (!filePath.startsWith(Path.of(storageRootPath).normalize())) {
+        // P2-6: Use absolute path for traversal check
+        Path filePath = storageRoot.resolve(key).normalize();
+
+        if (!filePath.startsWith(storageRoot)) {
+            log.warn("Path traversal attempt blocked on upload: key='{}', resolved='{}'", key, filePath);
             return ResponseEntity.badRequest().body(Map.of("error", "Invalid path"));
         }
 

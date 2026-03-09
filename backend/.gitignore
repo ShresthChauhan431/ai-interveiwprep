@@ -41,3 +41,10 @@ build/
 .env
 .env.local
 .env.*.local
+
+### Test / Binary Artifacts ###
+*.class
+*.mp4
+api_test.txt
+TestAuth.java
+TestAuth.class

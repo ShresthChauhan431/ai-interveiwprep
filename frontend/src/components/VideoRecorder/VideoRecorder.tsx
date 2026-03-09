@@ -10,7 +10,6 @@ import {
 } from '@mui/material';
 import {
     Videocam,
-    Stop,
     Send,
     Replay,
     VideocamOff,
@@ -104,6 +103,17 @@ const VideoRecorder: React.FC<VideoRecorderProps> = ({
         }
     }, []);
 
+    // ============================================================
+    // Handlers
+    // ============================================================
+
+    const handleStartRecording = useCallback(async () => {
+        setSubmitError(null);
+        stopCameraPreview();
+        setIsAutoSubmitting(false);
+        await startRecording(maxDuration);
+    }, [maxDuration, startRecording, stopCameraPreview]);
+
     // Start camera preview when permission is granted
     useEffect(() => {
         if (hasPermission && !isRecording && !recordedBlob) {
@@ -134,22 +144,7 @@ const VideoRecorder: React.FC<VideoRecorderProps> = ({
             setAutoStartCountdown(null);
         }
         return () => clearTimeout(timer);
-    }, [hasPermission, isRecording, recordedBlob, isCheckingPermissions, isAvatarSpeaking, autoStartCountdown]);
-
-    // ============================================================
-    // Handlers
-    // ============================================================
-
-    const handleStartRecording = async () => {
-        setSubmitError(null);
-        stopCameraPreview();
-        setIsAutoSubmitting(false);
-        await startRecording(maxDuration);
-    };
-
-    const handleStopRecording = () => {
-        stopRecording();
-    };
+    }, [hasPermission, isRecording, recordedBlob, isCheckingPermissions, isAvatarSpeaking, autoStartCountdown, handleStartRecording]);
 
     const handleFinishAnswering = () => {
         setIsAutoSubmitting(true);

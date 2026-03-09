@@ -1,5 +1,7 @@
 package com.interview.platform.config;
 
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import io.github.bucket4j.Bandwidth;
 import io.github.bucket4j.Bucket;
 import io.github.bucket4j.Refill;
@@ -13,8 +15,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
 
 import java.time.Duration;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 /**
  * HTTP request interceptor that enforces per-user token-bucket rate limiting
@@ -83,12 +84,29 @@ public class RateLimitInterceptor implements HandlerInterceptor {
     private static final Logger log = LoggerFactory.getLogger(RateLimitInterceptor.class);
 
     /**
-     * Per-user (or per-IP) bucket cache.
+     * Per-user (or per-IP) bucket cache with TTL eviction (P2-8).
      *
      * <p>Key: user ID (as string) or IP address for unauthenticated requests.
      * Value: the user's token bucket.</p>
+     *
+     * <p><strong>P2-8 Fix:</strong> Previously used a plain {@link java.util.concurrent.ConcurrentHashMap}
+     * that never evicted stale entries. Over weeks of operation, the map would
+     * accumulate entries for every unique user and IP address (~100 bytes per
+     * bucket). With 100K unique visitors that's ~10MB, but the growth was
+     * unbounded.</p>
+     *
+     * <p>Now uses a Caffeine cache with:</p>
+     * <ul>
+     *   <li>{@code expireAfterAccess(10 minutes)} — buckets for inactive users
+     *       are automatically evicted after 10 minutes of no requests</li>
+     *   <li>{@code maximumSize(50,000)} — hard cap to prevent memory exhaustion
+     *       even under sustained unique-IP abuse</li>
+     * </ul>
      */
-    private final Map<String, Bucket> bucketCache = new ConcurrentHashMap<>();
+    private final Cache<String, Bucket> bucketCache = Caffeine.newBuilder()
+            .expireAfterAccess(10, TimeUnit.MINUTES)
+            .maximumSize(50_000)
+            .build();
 
     /**
      * Maximum number of tokens in the bucket (burst capacity).
@@ -127,7 +145,7 @@ public class RateLimitInterceptor implements HandlerInterceptor {
             throws Exception {
 
         String bucketKey = resolveBucketKey(request);
-        Bucket bucket = bucketCache.computeIfAbsent(bucketKey, this::createBucket);
+        Bucket bucket = bucketCache.get(bucketKey, this::createBucket);
 
         if (bucket.tryConsume(1)) {
             // Request allowed — add remaining tokens header for client visibility
@@ -215,17 +233,20 @@ public class RateLimitInterceptor implements HandlerInterceptor {
     /**
      * Get the current number of cached buckets (exposed for monitoring/testing).
      *
-     * @return the number of active bucket entries
+     * <p>P2-8: Returns an approximate count since Caffeine performs eviction
+     * lazily. Call {@code bucketCache.cleanUp()} first if an exact count is needed.</p>
+     *
+     * @return the approximate number of active bucket entries
      */
-    public int getActiveBucketCount() {
-        return bucketCache.size();
+    public long getActiveBucketCount() {
+        return bucketCache.estimatedSize();
     }
 
     /**
      * Clear all cached buckets (useful for testing or administrative reset).
      */
     public void clearBuckets() {
-        bucketCache.clear();
+        bucketCache.invalidateAll();
         log.info("Rate limit buckets cleared");
     }
 }

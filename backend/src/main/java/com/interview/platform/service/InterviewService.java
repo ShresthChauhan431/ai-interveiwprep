@@ -55,7 +55,7 @@ import java.util.Optional;
  * </ul>
  *
  * <h3>State Machine:</h3>
- * 
+ *
  * <pre>
  *   CREATED ──► GENERATING_VIDEOS ──► IN_PROGRESS ──► PROCESSING ──► COMPLETED
  *                      │                    │               │
@@ -200,7 +200,10 @@ public class InterviewService {
 
         log.info("Interview created with ID: {} (status=GENERATING_VIDEOS)", interview.getId());
 
-        int finalNumQuestions = (numQuestions != null && numQuestions > 0 && numQuestions <= 20) ? numQuestions : 10;
+        // P1-9: Reduced max from 20 to 10, default from 10 to 5 for API cost control.
+        // At 10 questions: 10 × TTS + 10 × D-ID ≈ $0.51 per interview.
+        // Combined with rate limiting (5 burst/min), this caps cost exposure.
+        int finalNumQuestions = (numQuestions != null && numQuestions > 0 && numQuestions <= 10) ? numQuestions : 5;
 
         // Step 8: Generate questions via Ollama
         List<Question> questions = ollamaService.generateQuestionsWithResilience(resume, jobRole, finalNumQuestions);

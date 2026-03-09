@@ -145,7 +145,7 @@ const InterviewStart: React.FC<InterviewStartProps> = ({ onStart }) => {
     } finally {
       setIsLoading(false);
     }
-  }, [resumeId, selectedJobRole, hasPermission, checkPermissions, onStart]);
+  }, [resumeId, selectedJobRole, hasPermission, checkPermissions, onStart, numQuestions]);
 
   // ============================================================
   // Validations

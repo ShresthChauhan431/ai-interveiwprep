@@ -43,8 +43,8 @@ public class UserService {
 
         User savedUser = userRepository.save(user);
 
-        // Generate JWT token
-        String token = jwtTokenProvider.generateToken(savedUser.getEmail(), savedUser.getId());
+        // Generate JWT token (P2-13: include role claim for RBAC)
+        String token = jwtTokenProvider.generateToken(savedUser.getEmail(), savedUser.getId(), savedUser.getRole());
 
         return AuthResponse.builder()
                 .token(token)
@@ -65,8 +65,8 @@ public class UserService {
             throw new InvalidCredentialsException();
         }
 
-        // Generate JWT token
-        String token = jwtTokenProvider.generateToken(user.getEmail(), user.getId());
+        // Generate JWT token (P2-13: include role claim for RBAC)
+        String token = jwtTokenProvider.generateToken(user.getEmail(), user.getId(), user.getRole());
 
         return AuthResponse.builder()
                 .token(token)
@@ -82,7 +82,7 @@ public class UserService {
                 .orElseThrow(() -> new UserNotFoundException(userId));
 
         // Get interview count for this user
-        int totalInterviews = interviewRepository.findByUserId(userId).size();
+        int totalInterviews = (int) interviewRepository.countByUserId(userId);
 
         return UserProfile.builder()
                 .id(user.getId())
@@ -103,7 +103,7 @@ public class UserService {
         User updatedUser = userRepository.save(user);
 
         // Get interview count
-        int totalInterviews = interviewRepository.findByUserId(userId).size();
+        int totalInterviews = (int) interviewRepository.countByUserId(userId);
 
         return UserProfile.builder()
                 .id(updatedUser.getId())

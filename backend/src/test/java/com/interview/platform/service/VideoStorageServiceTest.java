@@ -120,27 +120,6 @@ class VideoStorageServiceTest {
     }
 
     // ============================================================
-    // uploadAudioBytes (deprecated — delegates to uploadBytes)
-    // ============================================================
-
-    @Nested
-    @DisplayName("uploadAudioBytes (deprecated)")
-    class UploadAudioBytesTests {
-
-        @Test
-        @DisplayName("Should delegate to uploadBytes and return storage key")
-        @SuppressWarnings("deprecation")
-        void testUploadAudioBytes_DelegatesToUploadBytes() {
-            byte[] audioData = "audio-bytes".getBytes();
-
-            String result = videoStorageService.uploadAudioBytes(audioData, "tts/question_1.mp3", "audio/mpeg");
-
-            assertThat(result).isEqualTo("tts/question_1.mp3");
-            assertThat(tempDir.resolve("tts/question_1.mp3")).exists();
-        }
-    }
-
-    // ============================================================
     // generatePresignedGetUrl
     // ============================================================
 
@@ -284,21 +263,4 @@ class VideoStorageServiceTest {
         }
     }
 
-    // ============================================================
-    // generatePresignedUrl (deprecated — backward compatibility)
-    // ============================================================
-
-    @Nested
-    @DisplayName("generatePresignedUrl (deprecated)")
-    class DeprecatedGeneratePresignedUrlTests {
-
-        @Test
-        @DisplayName("Should delegate to generatePresignedGetUrl")
-        @SuppressWarnings("deprecation")
-        void testGeneratePresignedUrl_DelegatesToGetUrl() {
-            String url = videoStorageService.generatePresignedUrl("some/key", 7);
-
-            assertThat(url).isEqualTo("http://localhost:8080/api/files/some/key");
-        }
-    }
 }

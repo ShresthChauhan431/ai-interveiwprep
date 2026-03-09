@@ -121,13 +121,7 @@ public class VideoStorageService {
         }
     }
 
-    /**
-     * @deprecated Use {@link #uploadBytes(byte[], String, String)} instead.
-     */
-    @Deprecated(forRemoval = true, since = "P1")
-    public String uploadAudioBytes(byte[] audioData, String key, String contentType) {
-        return uploadBytes(audioData, key, contentType);
-    }
+
 
     // ════════════════════════════════════════════════════════════════
     // URL Generation (local HTTP endpoints replace presigned URLs)
@@ -236,13 +230,7 @@ public class VideoStorageService {
         return Files.exists(filePath);
     }
 
-    /**
-     * @deprecated Use {@link #generatePresignedGetUrl(String)} instead.
-     */
-    @Deprecated(forRemoval = true, since = "P1")
-    public String generatePresignedUrl(String key, int validDays) {
-        return generatePresignedGetUrl(key);
-    }
+
 
     // ════════════════════════════════════════════════════════════════
     // Internal helpers

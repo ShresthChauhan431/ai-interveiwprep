@@ -53,5 +53,61 @@ public enum InterviewStatus {
     COMPLETED,
 
     /** Unrecoverable error — user should retry or contact support. */
-    FAILED
+    FAILED;
+
+    /**
+     * Centralized state machine enforcement (P1-11).
+     *
+     * <p>Validates whether a transition from this status to the given target
+     * is legal according to the interview lifecycle. All status transitions
+     * in the codebase should call this method before mutating the entity.</p>
+     *
+     * <pre>
+     *   CREATED ──► GENERATING_VIDEOS ──► IN_PROGRESS ──► PROCESSING ──► COMPLETED
+     *                      │                    │               │
+     *                      └────────────────────┴───────────────┴──────► FAILED
+     * </pre>
+     *
+     * @param target the desired next status
+     * @return {@code true} if the transition is valid
+     */
+    public boolean canTransitionTo(InterviewStatus target) {
+        return switch (this) {
+            case CREATED -> target == GENERATING_VIDEOS || target == FAILED;
+            case GENERATING_VIDEOS -> target == IN_PROGRESS || target == FAILED;
+            case IN_PROGRESS -> target == PROCESSING || target == FAILED;
+            case PROCESSING -> target == COMPLETED || target == FAILED;
+            case COMPLETED, FAILED -> false;
+        };
+    }
+
+    /**
+     * Transition to the target status, throwing if the transition is illegal.
+     *
+     * @param target the desired next status
+     * @return the target status (for fluent usage)
+     * @throws IllegalStateException if the transition is not allowed
+     */
+    public InterviewStatus transitionTo(InterviewStatus target) {
+        if (!canTransitionTo(target)) {
+            throw new IllegalStateException(
+                    String.format("Illegal interview status transition: %s → %s. "
+                            + "Allowed targets from %s: %s",
+                            this, target, this, allowedTargets()));
+        }
+        return target;
+    }
+
+    /**
+     * Returns a human-readable list of valid target states from this status.
+     */
+    private String allowedTargets() {
+        var targets = new java.util.ArrayList<InterviewStatus>();
+        for (InterviewStatus candidate : values()) {
+            if (canTransitionTo(candidate)) {
+                targets.add(candidate);
+            }
+        }
+        return targets.isEmpty() ? "(terminal state)" : targets.toString();
+    }
 }

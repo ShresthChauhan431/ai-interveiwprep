@@ -43,6 +43,25 @@ public class ResumeController {
         return ResponseEntity.ok(response);
     }
 
+    /**
+     * Delete a resume by ID (P2-11).
+     *
+     * <p>Validates ownership before deleting. Removes both the database
+     * entity and the physical file from storage to prevent orphaned files.</p>
+     *
+     * @param id      the resume ID to delete
+     * @param request the HTTP request (userId extracted from JWT)
+     * @return 204 No Content on success
+     */
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteResume(
+            @PathVariable Long id,
+            HttpServletRequest request) {
+        Long userId = getUserIdFromRequest(request);
+        resumeService.deleteResume(id, userId);
+        return ResponseEntity.noContent().build();
+    }
+
     private Long getUserIdFromRequest(HttpServletRequest request) {
         Object userIdAttr = request.getAttribute("userId");
         if (userIdAttr == null) {
