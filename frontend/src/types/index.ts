@@ -59,7 +59,8 @@ export type InterviewStatus =
   | "IN_PROGRESS"
   | "PROCESSING"
   | "COMPLETED"
-  | "FAILED";
+  | "FAILED"
+  | "DISQUALIFIED"; // FIX: Added DISQUALIFIED status for proctoring termination (Issue 3)
 
 export interface Interview {
   id: number;
@@ -81,6 +82,7 @@ export interface InterviewQuestion {
   category: string;
   difficulty: string;
   avatarVideoUrl: string | null;
+  audioUrl?: string | null; // FIX: ElevenLabs TTS audio URL replacing D-ID avatar video
   answered: boolean;
   responseVideoUrl?: string | null;
   responseTranscription?: string | null;

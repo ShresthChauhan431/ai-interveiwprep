@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react"; // FIX: Added useRef for candidate video element reference (Issue 3)
 import { useNavigate } from "react-router-dom";
 import {
   Box,
@@ -19,10 +25,13 @@ import {
 } from "@mui/icons-material";
 import { InterviewDTO, InterviewQuestion } from "../../types";
 import { interviewService } from "../../services/interview.service";
-import AvatarPlayer from "../AIAvatar/AvatarPlayer";
+// FIX: Replaced D-ID AvatarPlayer with ElevenLabs TTS QuestionPresenter
+import QuestionPresenter from "./QuestionPresenter";
 import VideoRecorder from "../VideoRecorder/VideoRecorder";
 import { useInterviewStore } from "../../stores/useInterviewStore";
 import { useInterviewEvents } from "../../hooks/useInterviewEvents";
+import { useProctoring } from "../../hooks/useProctoring"; // FIX: Import proctoring hook for surveillance system (Issue 3)
+import { ProctoringWarning } from "./ProctoringWarning"; // FIX: Import proctoring warning overlay component (Issue 3)
 
 // ============================================================
 // Props
@@ -32,6 +41,12 @@ interface InterviewRoomProps {
   interviewId: number;
   initialData?: InterviewDTO;
 }
+
+// ============================================================
+// Constants
+// ============================================================
+
+const MAX_VIOLATIONS = 3; // FIX: Maximum proctoring violations before interview termination (Issue 3)
 
 // ============================================================
 // InterviewRoom Component
@@ -77,6 +92,9 @@ const InterviewRoom: React.FC<InterviewRoomProps> = ({
   const [hasStarted, setHasStarted] = useState(false);
   const [avatarReplayKey, setAvatarReplayKey] = useState(0); // bump to replay avatar
 
+  // FIX: Ref to the candidate's camera video element for BlazeFace face detection (Issue 3)
+  const candidateVideoRef = useRef<HTMLVideoElement | null>(null);
+
   // ── Derived State ───────────────────────────────────────────
   const questions: InterviewQuestion[] = useMemo(() => {
     return interview?.questions || [];
@@ -88,8 +106,9 @@ const InterviewRoom: React.FC<InterviewRoomProps> = ({
   const isLastQuestion = currentQuestionIndex === totalQuestions - 1;
 
   // How many avatar videos are ready
+  // FIX: Count questions with audio ready instead of avatar video
   const videosReady = useMemo(
-    () => questions.filter((q) => !!q.avatarVideoUrl).length,
+    () => questions.filter((q) => !!q.audioUrl).length,
     [questions],
   );
 
@@ -107,6 +126,47 @@ const InterviewRoom: React.FC<InterviewRoomProps> = ({
     const serverAnswered = questions.filter((q) => q.answered).length;
     return Math.max(serverAnswered, answeredQuestionIds.size);
   }, [questions, answeredQuestionIds]);
+
+  // FIX: Check if the current question has already been answered — used for read-only review mode (Issue 2)
+  const isCurrentQuestionAnswered = useMemo(() => {
+    if (!currentQuestion) return false;
+    return (
+      currentQuestion.answered ||
+      answeredQuestionIds.has(currentQuestion.questionId)
+    ); // FIX: Check both server-side and local answered state
+  }, [currentQuestion, answeredQuestionIds]);
+
+  // ============================================================
+  // Proctoring System (Issue 3)
+  // ============================================================
+
+  // FIX: Only activate proctoring after the interview has started and first question is displayed
+  const isProctoringActive = hasStarted && isReady && !isCompleting;
+
+  const {
+    violationCount,
+    isWarningVisible,
+    isTerminated,
+    lastViolationReason,
+  } = useProctoring({
+    maxViolations: MAX_VIOLATIONS,
+    videoRef: candidateVideoRef, // FIX: Pass candidate camera ref for face detection
+    isActive: isProctoringActive, // FIX: Only activate after interview has started (not during setup/countdown)
+    onViolation: (count, reason) => {
+      console.warn(`Proctoring violation ${count}: ${reason}`); // FIX: Log violation for debugging
+    },
+    onTerminate: async (reason) => {
+      // FIX: Call backend to mark interview as DISQUALIFIED — terminateInterview swallows errors internally
+      await interviewService.terminateInterview(interviewId, reason);
+      navigate("/interview-disqualified", {
+        state: {
+          violationCount: MAX_VIOLATIONS,
+          reason,
+          interviewId,
+        },
+      }); // FIX: Navigate to disqualified page with proctoring details even if backend call fails
+    },
+  });
 
   // ============================================================
   // Handlers
@@ -144,19 +204,37 @@ const InterviewRoom: React.FC<InterviewRoomProps> = ({
    */
   const handleVideoSubmit = useCallback(
     async (videoBlob: Blob) => {
+      // FIX: Top-level guard — never proceed if no question or interview terminated
       if (!currentQuestion) return;
+      if (isTerminated) return; // FIX: Don't allow submission if interview has been terminated by proctoring (Issue 3)
 
       setIsUploading(true);
       setUploadProgress(0);
       setError(null);
 
       try {
-        await interviewService.submitVideoPresigned(
-          interviewId,
-          currentQuestion.questionId,
-          videoBlob,
-          (progress) => setUploadProgress(progress),
-        );
+        // FIX: Try presigned upload first, fall back to legacy multipart if it fails
+        try {
+          await interviewService.submitVideoPresigned(
+            interviewId,
+            currentQuestion.questionId,
+            videoBlob,
+            (progress) => setUploadProgress(progress),
+          );
+        } catch (presignedErr: any) {
+          // FIX: Presigned upload failed — fall back to legacy multipart upload so the answer is not lost
+          console.warn(
+            "Presigned upload failed, falling back to legacy multipart:",
+            presignedErr?.message,
+          );
+          setUploadProgress(0);
+          await interviewService.submitVideoResponse(
+            videoBlob,
+            interviewId,
+            currentQuestion.questionId,
+            (progress) => setUploadProgress(progress),
+          );
+        }
 
         // Mark locally as answered
         setAnsweredQuestionIds((prev) => {
@@ -166,8 +244,9 @@ const InterviewRoom: React.FC<InterviewRoomProps> = ({
         });
 
         if (!isLastQuestion) {
-          // Advance to next question and reset recorder state
-          setCurrentQuestionIndex(currentQuestionIndex + 1);
+          // FIX: Advance to next question and reset recorder state (Issue 2 — sequential one-at-a-time flow)
+          const next = currentQuestionIndex + 1; // FIX: Capture next index before state update
+          setCurrentQuestionIndex(next);
           setRecordingState(false);
           setUploadProgress(0);
         } else {
@@ -175,7 +254,11 @@ const InterviewRoom: React.FC<InterviewRoomProps> = ({
           await handleComplete();
         }
       } catch (err: any) {
-        setError(err.message || "Failed to upload video. Please try again.");
+        // FIX: Show inline error with retry hint — NEVER navigate away from the interview on a submit error
+        setError(
+          (err?.message || "Failed to upload video.") +
+            " Please try again — your recording is preserved.",
+        );
       } finally {
         setIsUploading(false);
       }
@@ -188,6 +271,7 @@ const InterviewRoom: React.FC<InterviewRoomProps> = ({
       setCurrentQuestionIndex,
       setRecordingState,
       handleComplete,
+      isTerminated, // FIX: Added isTerminated dependency for proctoring guard (Issue 3)
     ],
   );
 
@@ -197,6 +281,23 @@ const InterviewRoom: React.FC<InterviewRoomProps> = ({
   const handleSkipVideo = useCallback(() => {
     setRecordingState(true);
   }, [setRecordingState]);
+
+  // FIX: Callback to capture the candidate video element from the DOM for proctoring face detection (Issue 3)
+  useEffect(() => {
+    if (!hasStarted || !isReady) return;
+
+    // FIX: Use a small delay to ensure the VideoRecorder has mounted and the video element exists in DOM
+    const timer = setTimeout(() => {
+      const videoEl = document.querySelector(
+        "video[autoplay]",
+      ) as HTMLVideoElement | null;
+      if (videoEl) {
+        candidateVideoRef.current = videoEl; // FIX: Capture candidate camera video element for BlazeFace
+      }
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [hasStarted, isReady, currentQuestionIndex]);
 
   // ============================================================
   // Render: Loading / Generating videos
@@ -318,6 +419,19 @@ const InterviewRoom: React.FC<InterviewRoomProps> = ({
             turned on. Each response can be up to 3 minutes long.
           </Typography>
 
+          {/* FIX: Proctoring notice — inform candidate about monitoring before they start (Issue 3) */}
+          <Alert severity="info" sx={{ mb: 3, textAlign: "left" }}>
+            <Typography variant="body2" fontWeight={600}>
+              🔒 Proctoring Enabled
+            </Typography>
+            <Typography variant="body2">
+              This interview is monitored. Switching tabs, leaving the window,
+              or looking away from the camera will be recorded as violations.
+              After {MAX_VIOLATIONS} violations, the interview will be
+              automatically terminated.
+            </Typography>
+          </Alert>
+
           {/* Summary chips */}
           <Box
             sx={{
@@ -361,6 +475,15 @@ const InterviewRoom: React.FC<InterviewRoomProps> = ({
 
   return (
     <Container maxWidth="lg" sx={{ py: 4 }}>
+      {/* FIX: Proctoring warning overlay — renders above everything when a violation occurs (Issue 3) */}
+      <ProctoringWarning
+        violationCount={violationCount}
+        maxViolations={MAX_VIOLATIONS}
+        reason={lastViolationReason}
+        isVisible={isWarningVisible}
+        isTerminated={isTerminated}
+      />
+
       {/* ── Top progress bar ── */}
       <Box sx={{ mb: 3 }}>
         <Box
@@ -420,21 +543,31 @@ const InterviewRoom: React.FC<InterviewRoomProps> = ({
         >
           {/* ── Left column: Avatar Player ── */}
           <Box>
-            <AvatarPlayer
-              key={`avatar-${currentQuestion.questionId}-${avatarReplayKey}`}
-              videoUrl={currentQuestion.avatarVideoUrl || undefined}
+            {/* FIX: Replaced D-ID AvatarPlayer with ElevenLabs TTS QuestionPresenter */}
+            <QuestionPresenter
+              key={`presenter-${currentQuestion.questionId}-${avatarReplayKey}`}
               questionText={currentQuestion.questionText}
-              onVideoEnd={handleAvatarVideoEnd}
+              audioUrl={currentQuestion.audioUrl || null}
               questionNumber={currentQuestionIndex + 1}
               totalQuestions={totalQuestions}
+              onAudioComplete={handleAvatarVideoEnd}
             />
 
             {/* Repeat Question button */}
-            <Box sx={{ display: 'flex', gap: 1, mt: 1.5, flexWrap: 'wrap', alignItems: 'center' }}>
+            <Box
+              sx={{
+                display: "flex",
+                gap: 1,
+                mt: 1.5,
+                flexWrap: "wrap",
+                alignItems: "center",
+              }}
+            >
               <Button
                 variant="outlined"
                 size="small"
                 startIcon={<Replay />}
+                disabled={isTerminated} // FIX: Disable replay when terminated by proctoring (Issue 3)
                 onClick={() => {
                   // Replay avatar by incrementing key; hide recorder until video ends again
                   setAvatarReplayKey((k) => k + 1);
@@ -471,27 +604,60 @@ const InterviewRoom: React.FC<InterviewRoomProps> = ({
 
           {/* ── Right column: Video Recorder ── */}
           <Box>
-            <VideoRecorder
-              key={currentQuestion.questionId}
-              onRecordingComplete={handleVideoSubmit}
-              questionText={currentQuestion.questionText}
-              isUploading={isUploading}
-              uploadProgress={uploadProgress}
-              maxDuration={180}
-              isAvatarSpeaking={!showRecording}
-            />
-            {/* Provide skip option beneath if waiting for avatar */}
-            {!showRecording && (
-              <Box sx={{ mt: 2, textAlign: 'center' }}>
-                <Button
-                  variant="outlined"
-                  size="small"
-                  onClick={handleSkipVideo}
-                  sx={{ borderRadius: 2 }}
+            {/* FIX: If current question is already answered (navigated back), show read-only review instead of recorder (Issue 2) */}
+            {isCurrentQuestionAnswered ? (
+              <Paper
+                elevation={0}
+                sx={{
+                  p: 4,
+                  borderRadius: 3,
+                  border: "1px solid",
+                  borderColor: "success.main",
+                  bgcolor: "success.50",
+                  textAlign: "center",
+                }}
+              >
+                <CheckCircle
+                  sx={{ fontSize: 48, color: "success.main", mb: 1 }}
+                />
+                <Typography variant="h6" fontWeight={600} color="success.dark">
+                  Answer Submitted
+                </Typography>
+                <Typography
+                  variant="body2"
+                  color="text.secondary"
+                  sx={{ mt: 1 }}
                 >
-                  Skip Video & Start Recording
-                </Button>
-              </Box>
+                  Your response for this question has been recorded.
+                  {/* FIX: Do not allow re-recording a previously submitted answer (Issue 2) */}
+                </Typography>
+              </Paper>
+            ) : (
+              <>
+                <VideoRecorder
+                  key={currentQuestion.questionId}
+                  onRecordingComplete={handleVideoSubmit}
+                  questionText={currentQuestion.questionText}
+                  isUploading={isUploading}
+                  uploadProgress={uploadProgress}
+                  maxDuration={180}
+                  isAvatarSpeaking={!showRecording}
+                />
+                {/* Provide skip option beneath if waiting for avatar */}
+                {!showRecording && (
+                  <Box sx={{ mt: 2, textAlign: "center" }}>
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      disabled={isTerminated} // FIX: Disable skip when terminated by proctoring (Issue 3)
+                      onClick={handleSkipVideo}
+                      sx={{ borderRadius: 2 }}
+                    >
+                      Skip Video & Start Recording
+                    </Button>
+                  </Box>
+                )}
+              </>
             )}
           </Box>
         </Box>
@@ -512,10 +678,19 @@ const InterviewRoom: React.FC<InterviewRoomProps> = ({
         >
           <Button
             variant="outlined"
-            disabled={currentQuestionIndex === 0 || isUploading}
+            disabled={currentQuestionIndex === 0 || isUploading || isTerminated} // FIX: Disable navigation when terminated (Issue 3); also only allow going back to already-answered questions (Issue 2)
             onClick={() => {
-              setCurrentQuestionIndex(currentQuestionIndex - 1);
-              setRecordingState(false);
+              // FIX: Only allow going back if previous question was already answered — read-only review mode (Issue 2)
+              const prevIndex = currentQuestionIndex - 1;
+              const prevQuestion = questions[prevIndex];
+              if (
+                prevQuestion &&
+                (prevQuestion.answered ||
+                  answeredQuestionIds.has(prevQuestion.questionId))
+              ) {
+                setCurrentQuestionIndex(prevIndex);
+                setRecordingState(false);
+              }
             }}
             sx={{ borderRadius: 2 }}
           >
@@ -532,7 +707,7 @@ const InterviewRoom: React.FC<InterviewRoomProps> = ({
               variant="contained"
               color="success"
               onClick={handleComplete}
-              disabled={isUploading || isCompleting}
+              disabled={isUploading || isCompleting || isTerminated} // FIX: Disable finish when terminated by proctoring (Issue 3)
               sx={{ borderRadius: 2 }}
             >
               Finish Interview
@@ -544,7 +719,7 @@ const InterviewRoom: React.FC<InterviewRoomProps> = ({
             <Button
               variant="text"
               color="inherit"
-              disabled={isUploading}
+              disabled={isUploading || isTerminated} // FIX: Disable navigation when terminated by proctoring (Issue 3)
               onClick={() => {
                 setCurrentQuestionIndex(currentQuestionIndex + 1);
                 setRecordingState(false);

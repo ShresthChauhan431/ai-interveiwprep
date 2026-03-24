@@ -61,6 +61,7 @@ import java.util.concurrent.CompletableFuture;
  * @see com.interview.platform.config.ResilienceConfig
  */
 @Service
+@Deprecated // FIX: D-ID avatar generation replaced by ElevenLabs TTS audio
 public class AvatarVideoService {
 
     private static final Logger log = LoggerFactory.getLogger(AvatarVideoService.class);

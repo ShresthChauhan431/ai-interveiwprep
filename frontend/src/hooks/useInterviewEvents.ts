@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useInterviewStore } from "../stores/useInterviewStore";
 import { API_BASE_URL, TOKEN_KEY } from "../utils/constants";
 import api from "../services/api.service";
+// FIX: useInterviewEvents now handles both avatar-ready (legacy) and audio-ready (TTS) events
 
 /**
  * Hook that manages real-time SSE events for interview avatar generation progress.
@@ -21,11 +22,15 @@ import api from "../services/api.service";
  * the hook falls back to polling-only mode gracefully.
  */
 export const useInterviewEvents = (interviewId: number) => {
-  const { setConnectionStatus, updateQuestionVideoUrl, setInterview } =
-    useInterviewStore();
+  const {
+    setConnectionStatus,
+    updateQuestionVideoUrl,
+    updateQuestionAudioUrl,
+    setInterview,
+  } = useInterviewStore(); // FIX: Added updateQuestionAudioUrl for TTS audio ready events
 
   useEffect(() => {
-    const token = localStorage.getItem(TOKEN_KEY);
+    const token = sessionStorage.getItem(TOKEN_KEY); // FIX: was localStorage — token is stored in sessionStorage after audit migration, causing 401 on SSE ticket requests
     if (!token) return;
 
     let eventSource: EventSource | null = null;
@@ -68,7 +73,42 @@ export const useInterviewEvents = (interviewId: number) => {
         // Listen for avatar-ready events
         eventSource.addEventListener("avatar-ready", (_event: MessageEvent) => {
           console.log("Avatar Ready Event received");
+          // FIX: Handle new TTS audio ready event from backend
+          try {
+            const data = JSON.parse(_event.data); // FIX: Parse SSE event data for audioUrl
+            if (data.questionId && data.audioUrl) {
+              useInterviewStore.getState().updateQuestionAudioUrl(
+                // FIX: Update question audio URL in store when TTS audio is ready
+                data.questionId,
+                data.audioUrl,
+              );
+            }
+          } catch (e) {
+            // FIX: Graceful fallback — SSE data may not contain audioUrl in legacy events
+            console.debug(
+              "Could not parse avatar-ready event data for audioUrl:",
+              e,
+            );
+          }
         });
+
+        // FIX: Handle new TTS audio ready event from backend (dedicated event type)
+        eventSource.addEventListener(
+          "question:audio:ready",
+          (e: MessageEvent) => {
+            console.log("Question Audio Ready Event received"); // FIX: Log TTS audio ready event
+            try {
+              const data = JSON.parse(e.data); // FIX: Parse SSE event data
+              useInterviewStore.getState().updateQuestionAudioUrl(
+                // FIX: Update question audio URL in store
+                data.questionId,
+                data.audioUrl,
+              );
+            } catch (err) {
+              console.error("Failed to parse question:audio:ready event:", err); // FIX: Log parse errors
+            }
+          },
+        );
 
         // Listen for interview-ready events (all videos done)
         eventSource.addEventListener(
@@ -133,5 +173,11 @@ export const useInterviewEvents = (interviewId: number) => {
       }
       setConnectionStatus("disconnected");
     };
-  }, [interviewId, setConnectionStatus, updateQuestionVideoUrl, setInterview]);
+  }, [
+    interviewId,
+    setConnectionStatus,
+    updateQuestionVideoUrl,
+    updateQuestionAudioUrl,
+    setInterview,
+  ]); // FIX: Added updateQuestionAudioUrl to dependency array
 };

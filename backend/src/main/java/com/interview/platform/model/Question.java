@@ -32,6 +32,9 @@ public class Question {
     @Column(name = "avatar_video_url")
     private String avatarVideoUrl;
 
+    @Column(name = "audio_url") // FIX: ElevenLabs TTS audio URL field replacing D-ID avatar video generation
+    private String audioUrl;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
@@ -110,6 +113,14 @@ public class Question {
 
     public void setAvatarVideoUrl(String avatarVideoUrl) {
         this.avatarVideoUrl = avatarVideoUrl;
+    }
+
+    public String getAudioUrl() { // FIX: Getter for ElevenLabs TTS audio URL
+        return audioUrl;
+    }
+
+    public void setAudioUrl(String audioUrl) { // FIX: Setter for ElevenLabs TTS audio URL
+        this.audioUrl = audioUrl;
     }
 
     public LocalDateTime getCreatedAt() {

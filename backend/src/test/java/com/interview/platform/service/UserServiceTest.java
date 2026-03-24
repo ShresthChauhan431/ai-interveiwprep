@@ -19,8 +19,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.time.LocalDateTime;
-import java.util.Collections;
-import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.*;
@@ -81,7 +79,7 @@ class UserServiceTest {
             when(userRepository.existsByEmail("john@example.com")).thenReturn(false);
             when(passwordEncoder.encode("Password@123")).thenReturn("encodedPassword123");
             when(userRepository.save(any(User.class))).thenReturn(testUser);
-            when(jwtTokenProvider.generateToken("john@example.com", 1L)).thenReturn("jwt-token-123");
+            when(jwtTokenProvider.generateToken("john@example.com", 1L, "USER")).thenReturn("jwt-token-123");
 
             // Act
             AuthResponse response = userService.registerUser(registerRequest);
@@ -97,7 +95,7 @@ class UserServiceTest {
             verify(userRepository).existsByEmail("john@example.com");
             verify(passwordEncoder).encode("Password@123");
             verify(userRepository).save(any(User.class));
-            verify(jwtTokenProvider).generateToken("john@example.com", 1L);
+            verify(jwtTokenProvider).generateToken("john@example.com", 1L, "USER");
         }
 
         @Test
@@ -126,7 +124,7 @@ class UserServiceTest {
                 saved.setId(1L);
                 return saved;
             });
-            when(jwtTokenProvider.generateToken(anyString(), anyLong())).thenReturn("token");
+            when(jwtTokenProvider.generateToken(anyString(), anyLong(), anyString())).thenReturn("token");
 
             // Act
             userService.registerUser(registerRequest);
@@ -150,7 +148,7 @@ class UserServiceTest {
             // Arrange
             when(userRepository.findByEmail("john@example.com")).thenReturn(Optional.of(testUser));
             when(passwordEncoder.matches("Password@123", "encodedPassword123")).thenReturn(true);
-            when(jwtTokenProvider.generateToken("john@example.com", 1L)).thenReturn("jwt-token-456");
+            when(jwtTokenProvider.generateToken("john@example.com", 1L, "USER")).thenReturn("jwt-token-456");
 
             // Act
             AuthResponse response = userService.authenticateUser(loginRequest);
@@ -192,7 +190,7 @@ class UserServiceTest {
             assertThatThrownBy(() -> userService.authenticateUser(badRequest))
                     .isInstanceOf(InvalidCredentialsException.class);
 
-            verify(jwtTokenProvider, never()).generateToken(anyString(), anyLong());
+            verify(jwtTokenProvider, never()).generateToken(anyString(), anyLong(), anyString());
         }
     }
 
@@ -209,10 +207,7 @@ class UserServiceTest {
         void testGetUserProfile_Success() {
             // Arrange
             when(userRepository.findById(1L)).thenReturn(Optional.of(testUser));
-            when(interviewRepository.findByUserId(1L)).thenReturn(List.of(/* 3 dummy interviews */
-                    new com.interview.platform.model.Interview(),
-                    new com.interview.platform.model.Interview(),
-                    new com.interview.platform.model.Interview()));
+            when(interviewRepository.countByUserId(1L)).thenReturn(3L);
 
             // Act
             UserProfile profile = userService.getUserProfile(1L);
@@ -260,7 +255,7 @@ class UserServiceTest {
 
             when(userRepository.findById(1L)).thenReturn(Optional.of(testUser));
             when(userRepository.save(any(User.class))).thenReturn(updatedUser);
-            when(interviewRepository.findByUserId(1L)).thenReturn(Collections.emptyList());
+            when(interviewRepository.countByUserId(1L)).thenReturn(0L);
 
             // Act
             UserProfile profile = userService.updateUserProfile(1L, updateReq);

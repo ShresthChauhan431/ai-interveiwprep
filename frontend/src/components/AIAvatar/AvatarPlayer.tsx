@@ -8,13 +8,51 @@ import {
   Button,
   Alert,
   LinearProgress,
+  IconButton,
+  Tooltip,
 } from "@mui/material";
 import {
   Refresh,
   QuestionAnswer,
   PlayCircleOutline,
   MicNone,
+  Replay,
 } from "@mui/icons-material";
+
+// Robot SVG Component - Static robot image
+const RobotIcon: React.FC<{ size?: number }> = ({ size = 120 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 120 120"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+  >
+    {/* Robot Head */}
+    <rect x="30" y="20" width="60" height="50" rx="8" fill="#4A90D9" />
+    {/* Robot Eyes */}
+    <circle cx="45" cy="40" r="8" fill="#00FF88" />
+    <circle cx="75" cy="40" r="8" fill="#00FF88" />
+    {/* Robot Mouth */}
+    <rect x="45" y="52" width="30" height="8" rx="4" fill="#1a1a2e" />
+    {/* Antenna */}
+    <rect x="57" y="8" width="6" height="15" fill="#4A90D9" />
+    <circle cx="60" cy="8" r="5" fill="#FF6B6B" />
+    {/* Robot Ears */}
+    <rect x="20" y="35" width="12" height="20" rx="4" fill="#3A7BC8" />
+    <rect x="88" y="35" width="12" height="20" rx="4" fill="#3A7BC8" />
+    {/* Neck */}
+    <rect x="50" y="70" width="20" height="8" fill="#2D5A8A" />
+    {/* Robot Body */}
+    <rect x="25" y="78" width="70" height="35" rx="6" fill="#4A90D9" />
+    {/* Body Panel */}
+    <rect x="35" y="85" width="50" height="20" rx="4" fill="#3A7BC8" />
+    {/* Buttons */}
+    <circle cx="50" cy="95" r="5" fill="#00FF88" />
+    <circle cx="70" cy="95" r="5" fill="#FFD93D" />
+    <circle cx="60" cy="105" r="4" fill="#FF6B6B" />
+  </svg>
+);
 
 // Cast ReactPlayer to any to suppress "url" prop type error
 const Player = ReactPlayer as any;
@@ -59,12 +97,56 @@ const AvatarPlayer: React.FC<AvatarPlayerProps> = ({
     null,
   );
   const [videoEnded, setVideoEnded] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+
+  // Store current question text for repeat functionality
+  const questionTextRef = useRef(questionText);
 
   // Ref to avoid stale closure in fallback timer
   const onVideoEndRef = useRef(onVideoEnd);
   useEffect(() => {
     onVideoEndRef.current = onVideoEnd;
   }, [onVideoEnd]);
+
+  // Update ref when question text changes
+  useEffect(() => {
+    questionTextRef.current = questionText;
+  }, [questionText]);
+
+  // TTS function - extracted for reuse with repeat button
+  const speakQuestion = useCallback(() => {
+    if (!('speechSynthesis' in window)) {
+      return;
+    }
+
+    // Cancel any ongoing speech
+    window.speechSynthesis.cancel();
+
+    const utterance = new SpeechSynthesisUtterance(questionTextRef.current);
+
+    // Try to find a good English voice
+    const voices = window.speechSynthesis.getVoices();
+    const preferredVoice = voices.find(v => v.lang.startsWith('en') && v.name.includes('Google'))
+      || voices.find(v => v.lang.startsWith('en'));
+    if (preferredVoice) utterance.voice = preferredVoice;
+    utterance.rate = 0.95;
+
+    utterance.onstart = () => {
+      setIsSpeaking(true);
+    };
+
+    utterance.onend = () => {
+      setIsSpeaking(false);
+      onVideoEndRef.current();
+    };
+
+    utterance.onerror = () => {
+      setIsSpeaking(false);
+      onVideoEndRef.current();
+    };
+
+    window.speechSynthesis.speak(utterance);
+  }, []);
 
   // Auto-play after a short delay once video is available to prevent
   // play() being interrupted by pause() on fast remounts
@@ -80,41 +162,17 @@ const AvatarPlayer: React.FC<AvatarPlayerProps> = ({
   // When there is NO video at all, speak the text using Web Speech API, then fire onVideoEnd.
   useEffect(() => {
     if (!hasVideo) {
-      if ('speechSynthesis' in window) {
-        setIsLoading(false);
-        const utterance = new SpeechSynthesisUtterance(questionText);
-
-        // Try to find a good English voice
-        const voices = window.speechSynthesis.getVoices();
-        const preferredVoice = voices.find(v => v.lang.startsWith('en') && v.name.includes('Google'))
-          || voices.find(v => v.lang.startsWith('en'));
-        if (preferredVoice) utterance.voice = preferredVoice;
-        utterance.rate = 0.95; // Slightly slower for clarity
-
-        utterance.onend = () => {
-          onVideoEndRef.current();
-        };
-        utterance.onerror = () => {
-          onVideoEndRef.current();
-        };
-
-        // Slight delay before speaking so the UI mounts
-        const timer = setTimeout(() => {
-          window.speechSynthesis.speak(utterance);
-        }, 800);
-
-        return () => {
-          clearTimeout(timer);
-          window.speechSynthesis.cancel();
-        };
-      } else {
-        const timer = setTimeout(() => {
-          onVideoEndRef.current();
-        }, 800); // small delay so the UI renders first
-        return () => clearTimeout(timer);
-      }
+      setIsLoading(false);
+      // Slight delay before speaking so the UI mounts
+      const timer = setTimeout(() => {
+        speakQuestion();
+      }, 800);
+      return () => {
+        clearTimeout(timer);
+        window.speechSynthesis?.cancel();
+      };
     }
-  }, [hasVideo, questionText]);
+  }, [hasVideo, speakQuestion]);
 
   // Auto-fallback countdown: if video doesn't finish within
   // autoFallbackSeconds, automatically trigger onVideoEnd so the
@@ -224,22 +282,45 @@ const AvatarPlayer: React.FC<AvatarPlayerProps> = ({
               p: 3,
             }}
           >
-            <QuestionAnswer sx={{ fontSize: 48, color: "grey.400", mb: 1.5 }} />
+            {/* Robot Icon - Static robotic image */}
+            <Box sx={{ mb: 2 }}>
+              <RobotIcon size={120} />
+            </Box>
+            
             <Typography
               variant="body1"
-              sx={{ color: "grey.300", textAlign: "center", maxWidth: 400 }}
+              sx={{ color: "grey.300", textAlign: "center", maxWidth: 400, mb: 2 }}
             >
               {hasError
                 ? "Avatar video failed to load."
-                : "Avatar video is not available for this question."}
+                : "AI Interviewer is ready to ask you a question."}
             </Typography>
-            <Typography
-              variant="body2"
-              sx={{ color: "grey.500", textAlign: "center", mt: 0.5 }}
-            >
-              Read the question below — the recorder will appear shortly.
-            </Typography>
-            <Box sx={{ display: "flex", alignItems: "center", gap: 1, mt: 2 }}>
+
+            {/* Repeat Question Button */}
+            <Tooltip title="Repeat the question">
+              <Button
+                variant="outlined"
+                color="primary"
+                startIcon={isSpeaking ? <MicNone /> : <Replay />}
+                onClick={speakQuestion}
+                disabled={isSpeaking}
+                sx={{ 
+                  borderRadius: 8, 
+                  px: 3,
+                  mb: 2,
+                  borderColor: "primary.main",
+                  color: "primary.main",
+                  "&:hover": {
+                    borderColor: "primary.dark",
+                    backgroundColor: "rgba(74, 144, 217, 0.1)",
+                  }
+                }}
+              >
+                {isSpeaking ? "Speaking..." : "Repeat Question"}
+              </Button>
+            </Tooltip>
+
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
               <MicNone sx={{ color: "success.light", fontSize: 20 }} />
               <Typography variant="body2" sx={{ color: "success.light" }}>
                 Recorder is starting...
@@ -439,10 +520,33 @@ const AvatarPlayer: React.FC<AvatarPlayerProps> = ({
           </Box>
         )}
 
-        {/* Question Text */}
-        <Typography variant="body1" sx={{ fontWeight: 500, lineHeight: 1.6 }}>
-          {questionText}
-        </Typography>
+        {/* Question Text with Repeat Button */}
+        <Box sx={{ display: "flex", alignItems: "flex-start", gap: 2 }}>
+          <Typography 
+            variant="body1" 
+            sx={{ fontWeight: 500, lineHeight: 1.6, flex: 1 }}
+          >
+            {questionText}
+          </Typography>
+          
+          {/* Repeat Question Button - Always visible */}
+          <Tooltip title="Repeat the question">
+            <IconButton
+              onClick={speakQuestion}
+              disabled={isSpeaking}
+              color="primary"
+              size="small"
+              sx={{
+                backgroundColor: "rgba(74, 144, 217, 0.1)",
+                "&:hover": {
+                  backgroundColor: "rgba(74, 144, 217, 0.2)",
+                }
+              }}
+            >
+              {isSpeaking ? <MicNone fontSize="small" /> : <Replay fontSize="small" />}
+            </IconButton>
+          </Tooltip>
+        </Box>
       </Box>
     </Card>
   );

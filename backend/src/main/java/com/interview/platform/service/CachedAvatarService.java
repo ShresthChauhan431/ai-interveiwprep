@@ -46,7 +46,7 @@ import java.util.HexFormat;
  * </p>
  *
  * <h3>S3 Layout:</h3>
- * 
+ *
  * <pre>
  *   avatar-cache/{sha256-hash}.mp4
  * </pre>
@@ -64,6 +64,7 @@ import java.util.HexFormat;
  * @see AvatarVideoService
  * @see com.interview.platform.event.AvatarPipelineListener
  */
+@Deprecated // FIX: D-ID avatar caching replaced by TTS audio caching
 @Service
 public class CachedAvatarService {
 

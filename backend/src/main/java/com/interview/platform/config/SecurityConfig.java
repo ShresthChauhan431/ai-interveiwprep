@@ -105,6 +105,8 @@ public class SecurityConfig {
                         // AUDIT-FIX: Profile endpoints require authentication — only login/register are public
                         .requestMatchers("/api/auth/login", "/api/auth/register").permitAll()
                         .requestMatchers("/api/auth/**").authenticated()
+                        // Communication Live API requires authentication
+                        .requestMatchers("/api/communication/**").authenticated()
                         // Job roles list is read-only and needed before login on the start screen
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/job-roles").permitAll()
                         // File serving — requires authentication + ownership checks in FileController

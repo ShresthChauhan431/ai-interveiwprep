@@ -53,7 +53,10 @@ public enum InterviewStatus {
     COMPLETED,
 
     /** Unrecoverable error — user should retry or contact support. */
-    FAILED;
+    FAILED,
+
+    /** Interview terminated by proctoring system due to violations. */ // FIX: Added DISQUALIFIED status for proctoring termination (Issue 3)
+    DISQUALIFIED;
 
     /**
      * Centralized state machine enforcement (P1-11).
@@ -73,11 +76,11 @@ public enum InterviewStatus {
      */
     public boolean canTransitionTo(InterviewStatus target) {
         return switch (this) {
-            case CREATED -> target == GENERATING_VIDEOS || target == FAILED;
+            case CREATED -> target == GENERATING_VIDEOS || target == IN_PROGRESS || target == FAILED; // FIX: Allow CREATED → IN_PROGRESS since D-ID removed and TTS is synchronous (skip GENERATING_VIDEOS)
             case GENERATING_VIDEOS -> target == IN_PROGRESS || target == FAILED;
-            case IN_PROGRESS -> target == PROCESSING || target == FAILED;
+            case IN_PROGRESS -> target == PROCESSING || target == FAILED || target == DISQUALIFIED; // FIX: Allow IN_PROGRESS → DISQUALIFIED for proctoring termination (Issue 3)
             case PROCESSING -> target == COMPLETED || target == FAILED;
-            case COMPLETED, FAILED -> false;
+            case COMPLETED, FAILED, DISQUALIFIED -> false; // FIX: DISQUALIFIED is a terminal state (Issue 3)
         };
     }
 

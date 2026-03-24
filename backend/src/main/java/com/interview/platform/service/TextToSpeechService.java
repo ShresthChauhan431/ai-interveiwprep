@@ -16,6 +16,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files; // FIX: Added for local audio file persistence in generateAndSaveAudio
+import java.nio.file.Path; // FIX: Added for local audio file persistence in generateAndSaveAudio
+import java.nio.file.Paths; // FIX: Added for local audio file persistence in generateAndSaveAudio
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
@@ -114,6 +117,9 @@ public class TextToSpeechService {
     @Value("${elevenlabs.voice.similarity-boost:0.75}")
     private double similarityBoost;
 
+    @Value("${storage.local.path:./uploads}") // FIX: Local storage path for saving TTS audio files to disk
+    private String storagePath;
+
     public TextToSpeechService(RestTemplate restTemplate,
             VideoStorageService videoStorageService,
             ObjectMapper objectMapper,
@@ -207,6 +213,62 @@ public class TextToSpeechService {
             return HexFormat.of().formatHex(hash);
         } catch (NoSuchAlgorithmException e) {
             throw new RuntimeException("SHA-256 not available", e);
+        }
+    }
+
+    /**
+     * Generate TTS audio and save it to the local filesystem, returning
+     * a URL path the frontend can fetch via FileController.
+     *
+     * <p>
+     * This method is the replacement for the D-ID avatar video pipeline.
+     * Instead of generating a lip-sync video, it generates an MP3 audio
+     * file via ElevenLabs TTS and saves it under the local storage
+     * {@code audio/} subdirectory. The returned path (e.g.,
+     * {@code audio/question_42.mp3}) is stored on the Question entity's
+     * {@code audioUrl} field and served by the generic FileController
+     * GET /api/files/** endpoint.
+     * </p>
+     *
+     * <p>
+     * If any exception occurs (API failure, disk I/O error, etc.), the
+     * method returns {@code null} and logs a warning. This ensures the
+     * interview proceeds even if audio generation fails — the frontend
+     * falls back to text-only display.
+     * </p>
+     *
+     * @param text       the question text to convert to speech
+     * @param questionId the question entity ID (used in the filename)
+     * @return the storage key (e.g., {@code audio/question_42.mp3}) or null on failure
+     */
+    public String generateAndSaveAudio(String text, Long questionId) { // FIX: New method — saves TTS audio to local disk for direct serving (replaces D-ID video pipeline)
+        try {
+            // Reuse the existing S3-based generation which handles caching, resilience, etc.
+            // Then read the bytes back from local storage and write to the audio/ directory
+            // OR call ElevenLabs directly for a simpler path:
+            byte[] audioBytes; // FIX: Get raw audio bytes from ElevenLabs TTS API
+
+            // --- MOCK API FALLBACK ---
+            if (apiKey != null && apiKey.startsWith("mock")) { // FIX: Support mock API key for development/testing
+                log.info("Mock ElevenLabs API key detected in generateAndSaveAudio. Using dummy audio.");
+                audioBytes = new byte[] { 0 }; // tiny dummy payload
+            } else {
+                audioBytes = callElevenLabsWithResilience(text); // FIX: Call ElevenLabs with retry + circuit breaker
+            }
+
+            String filename = "question_" + questionId + ".mp3"; // FIX: Deterministic filename per question
+            Path audioDir = Paths.get(storagePath, "audio"); // FIX: Store under {storagePath}/audio/
+            Files.createDirectories(audioDir); // FIX: Auto-create audio/ subdirectory if it doesn't exist
+            Path filePath = audioDir.resolve(filename); // FIX: Resolve full path for the audio file
+            Files.write(filePath, audioBytes); // FIX: Write audio bytes to local filesystem
+
+            log.info("TTS audio saved for question {}: path={}, size={} bytes", // FIX: Log successful audio save
+                    questionId, filePath, audioBytes.length);
+
+            return "audio/" + filename; // FIX: Return storage key — served by FileController GET /api/files/audio/{filename}
+        } catch (Exception e) {
+            log.warn("TTS audio generation failed for question {}: {}", questionId, e.getMessage()); // FIX: Graceful fallback — never propagate exception; question still works without audio
+            return null; // FIX: Return null so interview proceeds with text-only fallback
         }
     }
 

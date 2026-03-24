@@ -58,7 +58,8 @@ public class ResumeService {
 
     /**
      * P2-5: Maximum characters to store from extracted resume text.
-     * Prevents unbounded TEXT column growth and limits LLM prompt size.
+     * Issue 16: 15,000 chars stored in DB, but OllamaService uses 4,000 for LLM prompt.
+     * This provides sufficient context while preventing LLM context overflow.
      */
     private static final int MAX_EXTRACTED_TEXT_LENGTH = 15_000;
 
@@ -86,6 +87,12 @@ public class ResumeService {
         try {
             // Extract text from file
             String rawText = extractText(file);
+
+            // FIX: Fallback when text extraction returns empty — never crash the upload, proceed with generic interview
+            if (rawText == null || rawText.isBlank()) {
+                rawText = "Resume text could not be extracted. Generic interview will proceed.";
+                log.warn("Text extraction returned empty for user: {}. Using fallback text.", userId);
+            }
 
             // P1-4: Sanitize extracted text to mitigate prompt injection
             String sanitizedText = sanitizeResumeText(rawText);
@@ -268,6 +275,10 @@ public class ResumeService {
             String text = stripper.getText(document);
             log.debug("Extracted {} characters from PDF", text.length());
             return text;
+        } catch (Exception e) {
+            // FIX: Never throw on extraction failure — return empty so fallback kicks in
+            log.warn("PDF text extraction failed: {}", e.getMessage());
+            return "";
         }
     }
 
@@ -278,6 +289,10 @@ public class ResumeService {
                     .collect(Collectors.joining("\n"));
             log.debug("Extracted {} characters from DOCX", text.length());
             return text;
+        } catch (Exception e) {
+            // FIX: Never throw on extraction failure — return empty so fallback kicks in
+            log.warn("DOCX text extraction failed: {}", e.getMessage());
+            return "";
         }
     }
 

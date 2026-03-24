@@ -21,7 +21,7 @@ jest.mock('react-router-dom', () => {
 });
 
 // Re-import MemoryRouter AFTER the mock is set up
-const { MemoryRouter, Link: RouterLink } = jest.requireActual('react-router-dom/dist/main');
+const { MemoryRouter, Link: RouterLink } = jest.requireActual('react-router-dom');
 
 // ── Auth context helpers ────────────────────────────────────
 
@@ -181,10 +181,13 @@ describe('Login Component', () => {
             const passwordInput = screen.getByLabelText(/password/i);
             await userEvent.type(passwordInput, 'Password123');
 
-            fireEvent.click(screen.getByRole('button', { name: /sign in/i }));
+            // Get a reference to the submit button before clicking
+            const submitButton = screen.getByRole('button', { name: /sign in/i });
+            fireEvent.click(submitButton);
 
             await waitFor(() => {
-                expect(screen.getByRole('button', { name: '' })).toBeDisabled();
+                // The button should be disabled while loading
+                expect(submitButton).toBeDisabled();
             });
         });
     });

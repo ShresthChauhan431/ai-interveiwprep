@@ -97,12 +97,12 @@ public class InterviewRecoveryTask {
      * Maximum time (in minutes) an interview can remain in GENERATING_VIDEOS
      * before the recovery task transitions it to IN_PROGRESS (text-only fallback).
      *
-     * <p>The default of 15 minutes accommodates normal avatar generation time
-     * (typically 30-120 seconds per question × 10 questions = 5-20 minutes)
-     * with a generous buffer. If D-ID is having issues, 15 minutes is enough
-     * to be confident that the pipeline has truly stalled.</p>
+     * <p>The default of 3 minutes accommodates normal TTS audio generation time
+     * (typically 2-5 seconds per question × 10 questions = 20-50 seconds)
+     * with a generous buffer. ElevenLabs TTS is much faster than the previous
+     * D-ID video pipeline.</p>
      */
-    @Value("${app.recovery.video-generation-timeout-minutes:15}")
+    @Value("${app.recovery.video-generation-timeout-minutes:3}") // FIX: Reduced from 15min to 3min — TTS audio generation is much faster than D-ID video
     private int videoGenerationTimeoutMinutes;
 
     /**

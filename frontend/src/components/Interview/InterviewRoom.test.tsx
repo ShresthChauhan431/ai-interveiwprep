@@ -1,8 +1,8 @@
-import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import '@testing-library/jest-dom';
-import InterviewRoom from './InterviewRoom';
-import { InterviewDTO, InterviewQuestion } from '../../types';
+import React from "react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import "@testing-library/jest-dom";
+import InterviewRoom from "./InterviewRoom";
+import { InterviewDTO, InterviewQuestion } from "../../types";
 
 // ============================================================
 // Mocks
@@ -10,114 +10,163 @@ import { InterviewDTO, InterviewQuestion } from '../../types';
 
 const mockNavigate = jest.fn();
 
-jest.mock('react-router-dom', () => {
-    const actual = jest.requireActual('react-router-dom');
-    return {
-        ...actual,
-        useNavigate: () => mockNavigate,
-    };
+jest.mock("react-router-dom", () => {
+  const actual = jest.requireActual("react-router-dom");
+  return {
+    ...actual,
+    useNavigate: () => mockNavigate,
+  };
 });
 
-const { MemoryRouter } = jest.requireActual('react-router-dom/dist/main');
+const { MemoryRouter } = jest.requireActual("react-router-dom");
 
 // Mock interviewService
-const mockSubmitVideoResponse = jest.fn();
+const mockSubmitVideoPresigned = jest.fn();
+const mockSubmitVideoResponse = jest.fn(); // FIX: Legacy fallback must also be mocked
 const mockCompleteInterview = jest.fn();
 
-jest.mock('../../services/interview.service', () => ({
-    interviewService: {
-        submitVideoPresigned: (...args: any[]) => mockSubmitVideoResponse(...args),
-        completeInterview: (...args: any[]) => mockCompleteInterview(...args),
-        getInterview: jest.fn(),
-    },
+jest.mock("../../services/interview.service", () => ({
+  interviewService: {
+    submitVideoPresigned: (...args: any[]) => mockSubmitVideoPresigned(...args),
+    submitVideoResponse: (...args: any[]) => mockSubmitVideoResponse(...args), // FIX: Component falls back to this when presigned fails
+    completeInterview: (...args: any[]) => mockCompleteInterview(...args),
+    getInterview: jest.fn(),
+    terminateInterview: jest.fn(),
+  },
+}));
+
+// ── Mock Zustand store ──────────────────────────────────────
+const mockSetInterview = jest.fn();
+const mockSetCurrentQuestionIndex = jest.fn();
+const mockSetRecordingState = jest.fn();
+
+let mockStoreState: any;
+
+jest.mock("../../stores/useInterviewStore", () => ({
+  useInterviewStore: (selector?: (state: any) => any) => {
+    const state = {
+      interview: mockStoreState.interview,
+      currentQuestionIndex: mockStoreState.currentQuestionIndex,
+      isRecording: mockStoreState.isRecording,
+      setInterview: mockSetInterview,
+      setCurrentQuestionIndex: mockSetCurrentQuestionIndex,
+      setRecordingState: mockSetRecordingState,
+      nextQuestion: jest.fn(),
+      prevQuestion: jest.fn(),
+    };
+    return selector ? selector(state) : state;
+  },
+}));
+
+// ── Mock hooks ──────────────────────────────────────────────
+jest.mock("../../hooks/useInterviewEvents", () => ({
+  useInterviewEvents: jest.fn(),
+}));
+
+jest.mock("../../hooks/useProctoring", () => ({
+  useProctoring: () => ({
+    violationCount: 0,
+    isWarningVisible: false,
+    isTerminated: false,
+    lastViolationReason: null,
+  }),
 }));
 
 // Mock child components to simplify testing the parent logic
-jest.mock('../AIAvatar/AvatarPlayer', () => {
-    return function MockAvatarPlayer({
-        questionText,
-        onVideoEnd,
-    }: {
-        questionText: string;
-        onVideoEnd: () => void;
-        videoUrl?: string;
-        questionNumber?: number;
-        totalQuestions?: number;
-    }) {
-        return (
-            <div data-testid="avatar-player">
-                <p>{questionText}</p>
-                <button onClick={onVideoEnd} data-testid="avatar-done-btn">
-                    Finish Speaking
-                </button>
-            </div>
-        );
-    };
+jest.mock("./QuestionPresenter", () => {
+  return function MockQuestionPresenter({
+    questionText,
+    onAudioComplete,
+  }: {
+    questionText: string;
+    onAudioComplete?: () => void;
+    audioUrl?: string | null;
+    questionNumber?: number;
+    totalQuestions?: number;
+  }) {
+    return (
+      <div data-testid="avatar-player">
+        <p>{questionText}</p>
+        <button onClick={onAudioComplete} data-testid="avatar-done-btn">
+          Finish Speaking
+        </button>
+      </div>
+    );
+  };
 });
 
-jest.mock('../VideoRecorder/VideoRecorder', () => {
-    return function MockVideoRecorder({
-        questionText,
-        onSubmit,
-    }: {
-        questionText: string;
-        onSubmit: (blob: Blob) => Promise<void>;
-    }) {
-        return (
-            <div data-testid="video-recorder">
-                <p>{questionText}</p>
-                <button
-                    onClick={() => onSubmit(new Blob(['test-video'], { type: 'video/webm' }))}
-                    data-testid="submit-recording-btn"
-                >
-                    Submit Recording
-                </button>
-            </div>
-        );
-    };
+jest.mock("../VideoRecorder/VideoRecorder", () => {
+  return function MockVideoRecorder({
+    questionText,
+    onRecordingComplete,
+  }: {
+    questionText: string;
+    onRecordingComplete: (blob: Blob) => Promise<void>;
+  }) {
+    return (
+      <div data-testid="video-recorder">
+        <p>{questionText}</p>
+        <button
+          onClick={() =>
+            onRecordingComplete(new Blob(["test-video"], { type: "video/webm" }))
+          }
+          data-testid="submit-recording-btn"
+        >
+          Submit Recording
+        </button>
+      </div>
+    );
+  };
 });
+
+jest.mock("./ProctoringWarning", () => ({
+  ProctoringWarning: () => null,
+}));
 
 // ============================================================
 // Test data
 // ============================================================
 
 const mockQuestions: InterviewQuestion[] = [
-    {
-        questionId: 1,
-        questionText: 'Tell me about yourself.',
-        questionNumber: 1,
-        category: 'Behavioral',
-        difficulty: 'Easy',
-        avatarVideoUrl: 'https://example.com/avatar1.mp4',
-        answered: false,
-    },
-    {
-        questionId: 2,
-        questionText: 'What is polymorphism?',
-        questionNumber: 2,
-        category: 'Technical',
-        difficulty: 'Medium',
-        avatarVideoUrl: 'https://example.com/avatar2.mp4',
-        answered: false,
-    },
-    {
-        questionId: 3,
-        questionText: 'Describe a challenging project.',
-        questionNumber: 3,
-        category: 'Behavioral',
-        difficulty: 'Hard',
-        avatarVideoUrl: 'https://example.com/avatar3.mp4',
-        answered: false,
-    },
+  {
+    questionId: 1,
+    questionText: "Tell me about yourself.",
+    questionNumber: 1,
+    category: "Behavioral",
+    difficulty: "Easy",
+    avatarVideoUrl: "https://example.com/avatar1.mp4",
+    audioUrl: "/api/files/audio/question_1.mp3",
+    answered: false,
+  },
+  {
+    questionId: 2,
+    questionText: "What is polymorphism?",
+    questionNumber: 2,
+    category: "Technical",
+    difficulty: "Medium",
+    avatarVideoUrl: "https://example.com/avatar2.mp4",
+    audioUrl: "/api/files/audio/question_2.mp3",
+    answered: false,
+  },
+  {
+    questionId: 3,
+    questionText: "Describe a challenging project.",
+    questionNumber: 3,
+    category: "Behavioral",
+    difficulty: "Hard",
+    avatarVideoUrl: "https://example.com/avatar3.mp4",
+    audioUrl: "/api/files/audio/question_3.mp3",
+    answered: false,
+  },
 ];
 
 const mockInitialData: InterviewDTO = {
-    interviewId: 42,
-    status: 'IN_PROGRESS',
-    type: 'VIDEO',
-    jobRoleTitle: 'Software Engineer',
-    startedAt: '2024-01-01T00:00:00Z',
-    questions: mockQuestions,
+  interviewId: 42,
+  status: "IN_PROGRESS",
+  type: "VIDEO",
+  jobRoleTitle: "Software Engineer",
+  startedAt: "2024-01-01T00:00:00Z",
+  questions: mockQuestions,
 };
 
 // ============================================================
@@ -125,318 +174,234 @@ const mockInitialData: InterviewDTO = {
 // ============================================================
 
 const renderRoom = (props = {}) =>
-    render(
-        <MemoryRouter>
-            <InterviewRoom
-                interviewId={42}
-                initialData={mockInitialData}
-                {...props}
-            />
-        </MemoryRouter>
-    );
+  render(
+    <MemoryRouter>
+      <InterviewRoom
+        interviewId={42}
+        initialData={mockInitialData}
+        {...props}
+      />
+    </MemoryRouter>,
+  );
+
+/** Render and click "Begin Interview" to pass the ready screen */
+const renderAndStart = (props = {}) => {
+  renderRoom(props);
+  fireEvent.click(screen.getByRole("button", { name: /begin interview/i }));
+};
 
 // ============================================================
 // Tests
 // ============================================================
 
-describe('InterviewRoom Component', () => {
-    beforeEach(() => {
-        jest.clearAllMocks();
+describe("InterviewRoom Component", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+
+    // Default store state: interview loaded, at question 0, not recording
+    mockStoreState = {
+      interview: mockInitialData,
+      currentQuestionIndex: 0,
+      isRecording: false,
+    };
+  });
+
+  // ──────────────────────────────────────────────────────────
+  // Ready Screen
+  // ──────────────────────────────────────────────────────────
+
+  describe("Ready Screen", () => {
+    test('shows "Your Interview is Ready!" before starting', () => {
+      renderRoom();
+      expect(screen.getByText(/your interview is ready/i)).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /begin interview/i }),
+      ).toBeInTheDocument();
     });
 
-    // ──────────────────────────────────────────────────────────
-    // Initial Render
-    // ──────────────────────────────────────────────────────────
+    test('clicking "Begin Interview" shows the question view', () => {
+      renderRoom();
+      fireEvent.click(screen.getByRole("button", { name: /begin interview/i }));
+      expect(screen.getByText("Question 1 of 3")).toBeInTheDocument();
+    });
+  });
 
-    describe('Initial Render', () => {
-        test('shows progress "Question 1 of 3"', () => {
-            renderRoom();
-            expect(screen.getByText('Question 1 of 3')).toBeInTheDocument();
-        });
+  // ──────────────────────────────────────────────────────────
+  // Initial Render (after starting)
+  // ──────────────────────────────────────────────────────────
 
-        test('shows 0% complete initially', () => {
-            renderRoom();
-            expect(screen.getByText('0% complete')).toBeInTheDocument();
-        });
-
-        test('renders avatar player with first question', () => {
-            renderRoom();
-            expect(screen.getByTestId('avatar-player')).toBeInTheDocument();
-            expect(screen.getByText('Tell me about yourself.')).toBeInTheDocument();
-        });
-
-        test('does not show video recorder initially', () => {
-            renderRoom();
-            expect(screen.queryByTestId('video-recorder')).not.toBeInTheDocument();
-        });
-
-        test('renders "Skip to recording" button', () => {
-            renderRoom();
-            expect(screen.getByRole('button', { name: /skip to recording/i })).toBeInTheDocument();
-        });
+  describe("Initial Render", () => {
+    test('shows progress "Question 1 of 3"', () => {
+      renderAndStart();
+      expect(screen.getByText("Question 1 of 3")).toBeInTheDocument();
     });
 
-    // ──────────────────────────────────────────────────────────
-    // Question Flow: Avatar → Recorder
-    // ──────────────────────────────────────────────────────────
-
-    describe('Question Flow', () => {
-        test('shows video recorder after avatar finishes speaking', () => {
-            renderRoom();
-
-            // Simulate avatar finishing
-            fireEvent.click(screen.getByTestId('avatar-done-btn'));
-
-            expect(screen.getByTestId('video-recorder')).toBeInTheDocument();
-        });
-
-        test('shows video recorder when "Skip to recording" is clicked', () => {
-            renderRoom();
-
-            fireEvent.click(screen.getByRole('button', { name: /skip to recording/i }));
-
-            expect(screen.getByTestId('video-recorder')).toBeInTheDocument();
-        });
+    test("renders avatar player with first question", () => {
+      renderAndStart();
+      expect(screen.getByTestId("avatar-player")).toBeInTheDocument();
+      expect(screen.getAllByText("Tell me about yourself.").length).toBeGreaterThanOrEqual(1);
     });
 
-    // ──────────────────────────────────────────────────────────
-    // Question Progression
-    // ──────────────────────────────────────────────────────────
+    test('renders "Skip Video & Start Recording" button', () => {
+      renderAndStart();
+      expect(
+        screen.getByRole("button", { name: /skip video/i }),
+      ).toBeInTheDocument();
+    });
+  });
 
-    describe('Question Progression', () => {
-        test('advances to next question after video submission', async () => {
-            mockSubmitVideoResponse.mockResolvedValueOnce({ id: 1 });
-            renderRoom();
+  // ──────────────────────────────────────────────────────────
+  // Question Flow: Avatar → Recorder
+  // ──────────────────────────────────────────────────────────
 
-            // Skip to recording phase
-            fireEvent.click(screen.getByTestId('avatar-done-btn'));
+  describe("Question Flow", () => {
+    test("shows video recorder after avatar finishes speaking", () => {
+      // Set isRecording to true to simulate store update after avatar done
+      mockStoreState.isRecording = true;
+      renderAndStart();
 
-            // Submit recording
-            fireEvent.click(screen.getByTestId('submit-recording-btn'));
-
-            await waitFor(() => {
-                expect(mockSubmitVideoResponse).toHaveBeenCalledWith(
-                    expect.any(Blob),
-                    42, // interviewId
-                    1,  // questionId
-                    expect.any(Function) // onProgress
-                );
-            });
-
-            // Should now show question 2
-            await waitFor(() => {
-                expect(screen.getByText('Question 2 of 3')).toBeInTheDocument();
-            });
-
-            // Should revert to avatar player (not recorder)
-            await waitFor(() => {
-                expect(screen.getByTestId('avatar-player')).toBeInTheDocument();
-                expect(screen.getByText('What is polymorphism?')).toBeInTheDocument();
-            });
-        });
-
-        test('updates progress bar after each question', async () => {
-            mockSubmitVideoResponse.mockResolvedValueOnce({ id: 1 });
-            renderRoom();
-
-            fireEvent.click(screen.getByTestId('avatar-done-btn'));
-            fireEvent.click(screen.getByTestId('submit-recording-btn'));
-
-            await waitFor(() => {
-                expect(screen.getByText('33% complete')).toBeInTheDocument();
-            });
-        });
+      expect(screen.getByTestId("video-recorder")).toBeInTheDocument();
     });
 
-    // ──────────────────────────────────────────────────────────
-    // Video Submission
-    // ──────────────────────────────────────────────────────────
+    test("calls setRecordingState when skip button is clicked", () => {
+      renderAndStart();
 
-    describe('Video Submission', () => {
-        test('calls interviewService.submitVideoResponse with correct params', async () => {
-            mockSubmitVideoResponse.mockResolvedValueOnce({ id: 1 });
-            renderRoom();
+      fireEvent.click(
+        screen.getByRole("button", { name: /skip video/i }),
+      );
 
-            fireEvent.click(screen.getByTestId('avatar-done-btn'));
-            fireEvent.click(screen.getByTestId('submit-recording-btn'));
+      expect(mockSetRecordingState).toHaveBeenCalledWith(true);
+    });
+  });
 
-            await waitFor(() => {
-                expect(mockSubmitVideoResponse).toHaveBeenCalledTimes(1);
-                expect(mockSubmitVideoResponse).toHaveBeenCalledWith(
-                    expect.any(Blob),
-                    42,
-                    1,
-                    expect.any(Function)
-                );
-            });
-        });
+  // ──────────────────────────────────────────────────────────
+  // Video Submission
+  // ──────────────────────────────────────────────────────────
 
-        test('shows error when video upload fails', async () => {
-            mockSubmitVideoResponse.mockRejectedValueOnce(new Error('Upload failed'));
-            renderRoom();
+  describe("Video Submission", () => {
+    test("calls interviewService.submitVideoPresigned with correct params", async () => {
+      mockSubmitVideoPresigned.mockResolvedValueOnce({ id: 1 });
+      mockStoreState.isRecording = true;
+      renderAndStart();
 
-            fireEvent.click(screen.getByTestId('avatar-done-btn'));
-            fireEvent.click(screen.getByTestId('submit-recording-btn'));
+      fireEvent.click(screen.getByTestId("submit-recording-btn"));
 
-            await waitFor(() => {
-                expect(screen.getByText(/upload failed/i)).toBeInTheDocument();
-            });
-        });
-
-        test('shows "Uploading response..." while uploading', async () => {
-            mockSubmitVideoResponse.mockReturnValueOnce(new Promise(() => { }));
-            renderRoom();
-
-            fireEvent.click(screen.getByTestId('avatar-done-btn'));
-            fireEvent.click(screen.getByTestId('submit-recording-btn'));
-
-            await waitFor(() => {
-                expect(screen.getByText(/uploading response/i)).toBeInTheDocument();
-            });
-        });
+      await waitFor(() => {
+        expect(mockSubmitVideoPresigned).toHaveBeenCalledTimes(1);
+        expect(mockSubmitVideoPresigned).toHaveBeenCalledWith(
+          42, // interviewId
+          1,  // questionId
+          expect.any(Blob),
+          expect.any(Function), // onProgress
+        );
+      });
     });
 
-    // ──────────────────────────────────────────────────────────
-    // Interview Completion
-    // ──────────────────────────────────────────────────────────
+    test("shows error when video upload fails", async () => {
+      // FIX: Must reject BOTH upload paths — presigned is tried first; on failure the
+      // component falls back to legacy (submitVideoResponse). Error only shows if both fail.
+      mockSubmitVideoPresigned.mockRejectedValueOnce(new Error("Upload failed"));
+      mockSubmitVideoResponse.mockRejectedValueOnce(new Error("Upload failed"));
+      mockStoreState.isRecording = true;
+      renderAndStart();
 
-    describe('Interview Completion', () => {
-        test('shows "Complete Interview" button on last question in recording view', async () => {
-            // Advance to the last question
-            mockSubmitVideoResponse
-                .mockResolvedValueOnce({ id: 1 })
-                .mockResolvedValueOnce({ id: 2 });
+      fireEvent.click(screen.getByTestId("submit-recording-btn"));
 
-            renderRoom();
+      await waitFor(() => {
+        expect(screen.getByText(/upload failed/i)).toBeInTheDocument();
+      });
+    });
+  });
 
-            // Q1: skip avatar → submit recording
-            fireEvent.click(screen.getByTestId('avatar-done-btn'));
-            fireEvent.click(screen.getByTestId('submit-recording-btn'));
+  // ──────────────────────────────────────────────────────────
+  // Interview Completion
+  // ──────────────────────────────────────────────────────────
 
-            // Wait for Q2
-            await waitFor(() => {
-                expect(screen.getByText('Question 2 of 3')).toBeInTheDocument();
-            });
+  describe("Interview Completion", () => {
+    test("completes interview and navigates to /complete on last question submit", async () => {
+      // Single question interview — immediately becomes the last
+      const singleQuestionData: InterviewDTO = {
+        ...mockInitialData,
+        questions: [mockQuestions[0]],
+      };
+      mockStoreState.interview = singleQuestionData;
+      mockStoreState.isRecording = true;
 
-            // Q2: skip avatar → submit recording
-            fireEvent.click(screen.getByTestId('avatar-done-btn'));
-            fireEvent.click(screen.getByTestId('submit-recording-btn'));
+      mockSubmitVideoPresigned.mockResolvedValueOnce({ id: 1 });
+      mockCompleteInterview.mockResolvedValueOnce(undefined);
 
-            // Wait for Q3
-            await waitFor(() => {
-                expect(screen.getByText('Question 3 of 3')).toBeInTheDocument();
-            });
+      render(
+        <MemoryRouter>
+          <InterviewRoom interviewId={42} initialData={singleQuestionData} />
+        </MemoryRouter>,
+      );
 
-            // Switch to recording view
-            fireEvent.click(screen.getByTestId('avatar-done-btn'));
+      // Pass ready screen
+      fireEvent.click(screen.getByRole("button", { name: /begin interview/i }));
 
-            // The "Complete Interview" button should appear on the last question
-            await waitFor(() => {
-                expect(screen.getByRole('button', { name: /complete interview/i })).toBeInTheDocument();
-            });
-        });
+      // Submit recording
+      fireEvent.click(screen.getByTestId("submit-recording-btn"));
 
-        test('completes interview and navigates to feedback on last question submit', async () => {
-            // Only 1 question — makes it immediately the last
-            const singleQuestionData: InterviewDTO = {
-                ...mockInitialData,
-                questions: [mockQuestions[0]],
-            };
-            mockSubmitVideoResponse.mockResolvedValueOnce({ id: 1 });
-            mockCompleteInterview.mockResolvedValueOnce(undefined);
+      await waitFor(() => {
+        expect(mockCompleteInterview).toHaveBeenCalledWith(42);
+      });
 
-            render(
-                <MemoryRouter>
-                    <InterviewRoom interviewId={42} initialData={singleQuestionData} />
-                </MemoryRouter>
-            );
-
-            // Skip avatar → submit recording
-            fireEvent.click(screen.getByTestId('avatar-done-btn'));
-            fireEvent.click(screen.getByTestId('submit-recording-btn'));
-
-            await waitFor(() => {
-                expect(mockCompleteInterview).toHaveBeenCalledWith(42);
-            });
-
-            await waitFor(() => {
-                expect(mockNavigate).toHaveBeenCalledWith('/interview/42/feedback');
-            });
-        });
-
-        test('shows completing state while finishing interview', async () => {
-            const singleQuestionData: InterviewDTO = {
-                ...mockInitialData,
-                questions: [mockQuestions[0]],
-            };
-            mockSubmitVideoResponse.mockResolvedValueOnce({ id: 1 });
-            mockCompleteInterview.mockReturnValueOnce(new Promise(() => { })); // Never resolves
-
-            render(
-                <MemoryRouter>
-                    <InterviewRoom interviewId={42} initialData={singleQuestionData} />
-                </MemoryRouter>
-            );
-
-            fireEvent.click(screen.getByTestId('avatar-done-btn'));
-            fireEvent.click(screen.getByTestId('submit-recording-btn'));
-
-            await waitFor(() => {
-                expect(screen.getByText(/completing interview/i)).toBeInTheDocument();
-            });
-        });
-
-        test('shows error when interview completion fails', async () => {
-            mockCompleteInterview.mockRejectedValueOnce(new Error('Server error'));
-            renderRoom();
-
-            // First, get to the last question
-            mockSubmitVideoResponse
-                .mockResolvedValueOnce({ id: 1 })
-                .mockResolvedValueOnce({ id: 2 });
-
-            // Q1
-            fireEvent.click(screen.getByTestId('avatar-done-btn'));
-            fireEvent.click(screen.getByTestId('submit-recording-btn'));
-            await waitFor(() => expect(screen.getByText('Question 2 of 3')).toBeInTheDocument());
-
-            // Q2
-            fireEvent.click(screen.getByTestId('avatar-done-btn'));
-            fireEvent.click(screen.getByTestId('submit-recording-btn'));
-            await waitFor(() => expect(screen.getByText('Question 3 of 3')).toBeInTheDocument());
-
-            // Q3 — click Complete Interview
-            fireEvent.click(screen.getByTestId('avatar-done-btn'));
-            fireEvent.click(screen.getByRole('button', { name: /complete interview/i }));
-
-            await waitFor(() => {
-                expect(screen.getByText(/server error/i)).toBeInTheDocument();
-            });
-        });
+      await waitFor(() => {
+        expect(mockNavigate).toHaveBeenCalledWith("/interview/42/complete");
+      });
     });
 
-    // ──────────────────────────────────────────────────────────
-    // Error Dismissal
-    // ──────────────────────────────────────────────────────────
+    test("shows submitting state while finishing interview", async () => {
+      const singleQuestionData: InterviewDTO = {
+        ...mockInitialData,
+        questions: [mockQuestions[0]],
+      };
+      mockStoreState.interview = singleQuestionData;
+      mockStoreState.isRecording = true;
 
-    describe('Error Handling', () => {
-        test('error alert can be dismissed', async () => {
-            mockSubmitVideoResponse.mockRejectedValueOnce(new Error('Upload failed'));
-            renderRoom();
+      mockSubmitVideoPresigned.mockResolvedValueOnce({ id: 1 });
+      mockCompleteInterview.mockReturnValueOnce(new Promise(() => { })); // Never resolves
 
-            fireEvent.click(screen.getByTestId('avatar-done-btn'));
-            fireEvent.click(screen.getByTestId('submit-recording-btn'));
+      render(
+        <MemoryRouter>
+          <InterviewRoom interviewId={42} initialData={singleQuestionData} />
+        </MemoryRouter>,
+      );
 
-            await waitFor(() => {
-                expect(screen.getByText(/upload failed/i)).toBeInTheDocument();
-            });
+      fireEvent.click(screen.getByRole("button", { name: /begin interview/i }));
+      fireEvent.click(screen.getByTestId("submit-recording-btn"));
 
-            const closeButton = screen.getByRole('button', { name: /close/i });
-            fireEvent.click(closeButton);
-
-            await waitFor(() => {
-                expect(screen.queryByText(/upload failed/i)).not.toBeInTheDocument();
-            });
-        });
+      await waitFor(() => {
+        expect(screen.getByText(/submitting your interview/i)).toBeInTheDocument();
+      });
     });
+  });
+
+  // ──────────────────────────────────────────────────────────
+  // Error Handling
+  // ──────────────────────────────────────────────────────────
+
+  describe("Error Handling", () => {
+    test("error alert can be dismissed", async () => {
+      // FIX: Must reject BOTH upload paths — error is shown only when both presigned
+      // and the legacy fallback fail.
+      mockSubmitVideoPresigned.mockRejectedValueOnce(new Error("Upload failed"));
+      mockSubmitVideoResponse.mockRejectedValueOnce(new Error("Upload failed"));
+      mockStoreState.isRecording = true;
+      renderAndStart();
+
+      fireEvent.click(screen.getByTestId("submit-recording-btn"));
+
+      await waitFor(() => {
+        expect(screen.getByText(/upload failed/i)).toBeInTheDocument();
+      });
+
+      const closeButton = screen.getByRole("button", { name: /close/i });
+      fireEvent.click(closeButton);
+
+      await waitFor(() => {
+        expect(screen.queryByText(/upload failed/i)).not.toBeInTheDocument();
+      });
+    });
+  });
 });

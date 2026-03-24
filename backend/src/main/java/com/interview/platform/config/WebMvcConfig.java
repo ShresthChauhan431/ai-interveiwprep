@@ -86,7 +86,10 @@ public class WebMvcConfig implements WebMvcConfigurer {
                         "/api/interviews/*/complete",
 
                         // Resume upload — S3 upload + document parsing
-                        "/api/resumes/upload"
+                        "/api/resumes/upload",
+
+                        // Communication Live API — Ollama chat and analysis
+                        "/api/communication/**"
                 );
     }
 }

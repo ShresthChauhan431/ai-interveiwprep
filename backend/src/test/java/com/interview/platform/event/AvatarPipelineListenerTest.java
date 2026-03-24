@@ -7,6 +7,7 @@ import com.interview.platform.model.Question;
 import com.interview.platform.repository.InterviewRepository;
 import com.interview.platform.repository.QuestionRepository;
 import com.interview.platform.service.CachedAvatarService;
+import com.interview.platform.service.TextToSpeechService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -35,6 +36,9 @@ class AvatarPipelineListenerTest {
 
         @Mock
         private CachedAvatarService cachedAvatarService;
+
+        @Mock
+        private TextToSpeechService textToSpeechService;
 
         @Mock
         private com.interview.platform.service.SseEmitterService sseEmitterService;
@@ -92,12 +96,12 @@ class AvatarPipelineListenerTest {
 
                         when(questionRepository.findById(201L)).thenReturn(Optional.of(question1));
                         when(questionRepository.findById(202L)).thenReturn(Optional.of(question2));
-                        when(cachedAvatarService.getOrGenerateAvatar("Tell me about your experience with Spring Boot.",
+                        when(textToSpeechService.generateAndSaveAudio("Tell me about your experience with Spring Boot.",
                                         201L))
-                                        .thenReturn("avatar-cache/abc123.mp4");
-                        when(cachedAvatarService.getOrGenerateAvatar("Describe a challenging project you worked on.",
+                                        .thenReturn("tts-audio/abc123.mp3");
+                        when(textToSpeechService.generateAndSaveAudio("Describe a challenging project you worked on.",
                                         202L))
-                                        .thenReturn("avatar-cache/def456.mp4");
+                                        .thenReturn("tts-audio/def456.mp3");
                         when(questionRepository.save(any(Question.class))).thenAnswer(i -> i.getArgument(0));
                         when(interviewRepository.findById(100L)).thenReturn(Optional.of(testInterview));
                         when(interviewRepository.save(any(Interview.class))).thenAnswer(i -> i.getArgument(0));
@@ -106,9 +110,9 @@ class AvatarPipelineListenerTest {
                         listener.onQuestionsCreated(event);
 
                         // Assert — both questions processed
-                        verify(cachedAvatarService).getOrGenerateAvatar(
+                        verify(textToSpeechService).generateAndSaveAudio(
                                         "Tell me about your experience with Spring Boot.", 201L);
-                        verify(cachedAvatarService).getOrGenerateAvatar(
+                        verify(textToSpeechService).generateAndSaveAudio(
                                         "Describe a challenging project you worked on.", 202L);
                         verify(questionRepository, times(2)).save(any(Question.class));
 
@@ -126,12 +130,12 @@ class AvatarPipelineListenerTest {
 
                         when(questionRepository.findById(201L)).thenReturn(Optional.of(question1));
                         when(questionRepository.findById(202L)).thenReturn(Optional.of(question2));
-                        when(cachedAvatarService.getOrGenerateAvatar(
+                        when(textToSpeechService.generateAndSaveAudio(
                                         eq("Tell me about your experience with Spring Boot."), eq(201L)))
                                         .thenThrow(new RuntimeException("D-ID API timeout"));
-                        when(cachedAvatarService.getOrGenerateAvatar(
+                        when(textToSpeechService.generateAndSaveAudio(
                                         eq("Describe a challenging project you worked on."), eq(202L)))
-                                        .thenReturn("avatar-cache/def456.mp4");
+                                        .thenReturn("tts-audio/def456.mp3");
                         when(questionRepository.save(any(Question.class))).thenAnswer(i -> i.getArgument(0));
                         when(interviewRepository.findById(100L)).thenReturn(Optional.of(testInterview));
                         when(interviewRepository.save(any(Interview.class))).thenAnswer(i -> i.getArgument(0));
@@ -141,7 +145,7 @@ class AvatarPipelineListenerTest {
                                         .doesNotThrowAnyException();
 
                         // Assert — question 202 was still processed despite 201's failure
-                        verify(cachedAvatarService).getOrGenerateAvatar(anyString(), eq(202L));
+                        verify(textToSpeechService).generateAndSaveAudio(anyString(), eq(202L));
                         // Only question 202 should be saved (201 failed before save)
                         verify(questionRepository, times(1)).save(any(Question.class));
 
@@ -159,7 +163,7 @@ class AvatarPipelineListenerTest {
 
                         when(questionRepository.findById(201L)).thenReturn(Optional.of(question1));
                         when(questionRepository.findById(202L)).thenReturn(Optional.of(question2));
-                        when(cachedAvatarService.getOrGenerateAvatar(anyString(), anyLong()))
+                        when(textToSpeechService.generateAndSaveAudio(anyString(), anyLong()))
                                         .thenThrow(new RuntimeException("Service unavailable"));
                         when(interviewRepository.findById(100L)).thenReturn(Optional.of(testInterview));
                         when(interviewRepository.save(any(Interview.class))).thenAnswer(i -> i.getArgument(0));
@@ -182,8 +186,8 @@ class AvatarPipelineListenerTest {
                                         this, 100L, List.of(201L));
 
                         when(questionRepository.findById(201L)).thenReturn(Optional.of(question1));
-                        when(cachedAvatarService.getOrGenerateAvatar(anyString(), eq(201L)))
-                                        .thenReturn("avatar-cache/abc123.mp4");
+                        when(textToSpeechService.generateAndSaveAudio(anyString(), eq(201L)))
+                                        .thenReturn("tts-audio/abc123.mp3");
                         when(questionRepository.save(any(Question.class))).thenAnswer(i -> i.getArgument(0));
                         when(interviewRepository.findById(100L))
                                         .thenThrow(new RuntimeException("DB connection lost"));
@@ -210,33 +214,33 @@ class AvatarPipelineListenerTest {
                 void testProcessQuestion_Success() {
                         // Arrange
                         when(questionRepository.findById(201L)).thenReturn(Optional.of(question1));
-                        when(cachedAvatarService.getOrGenerateAvatar(
+                        when(textToSpeechService.generateAndSaveAudio(
                                         "Tell me about your experience with Spring Boot.", 201L))
-                                        .thenReturn("avatar-cache/abc123.mp4");
+                                        .thenReturn("tts-audio/abc123.mp3");
                         when(questionRepository.save(any(Question.class))).thenAnswer(i -> i.getArgument(0));
 
                         // Act
                         listener.processQuestion(201L);
 
                         // Assert
-                        verify(cachedAvatarService).getOrGenerateAvatar(
+                        verify(textToSpeechService).generateAndSaveAudio(
                                         "Tell me about your experience with Spring Boot.", 201L);
                         verify(questionRepository).save(argThat(
-                                        question -> "avatar-cache/abc123.mp4".equals(question.getAvatarVideoUrl())));
+                                        question -> "tts-audio/abc123.mp3".equals(question.getAudioUrl())));
                 }
 
                 @Test
                 @DisplayName("Should skip processing when question already has avatar video (idempotency)")
                 void testProcessQuestion_AlreadyHasAvatar() {
                         // Arrange — question already has an avatar video
-                        question1.setAvatarVideoUrl("avatar-cache/existing.mp4");
+                        question1.setAudioUrl("tts-audio/existing.mp3");
                         when(questionRepository.findById(201L)).thenReturn(Optional.of(question1));
 
                         // Act
                         listener.processQuestion(201L);
 
-                        // Assert — should NOT call CachedAvatarService or save
-                        verify(cachedAvatarService, never()).getOrGenerateAvatar(anyString(), anyLong());
+                        // Assert — should NOT call TextToSpeechService or save
+                        verify(textToSpeechService, never()).generateAndSaveAudio(anyString(), anyLong());
                         verify(questionRepository, never()).save(any(Question.class));
                 }
 
@@ -244,14 +248,14 @@ class AvatarPipelineListenerTest {
                 @DisplayName("Should skip processing when avatar video URL is non-blank (legacy URL)")
                 void testProcessQuestion_AlreadyHasLegacyUrl() {
                         // Arrange — question has a legacy HTTP URL
-                        question1.setAvatarVideoUrl("https://bucket.s3.amazonaws.com/old-video.mp4");
+                        question1.setAudioUrl("https://bucket.s3.amazonaws.com/old-audio.mp3");
                         when(questionRepository.findById(201L)).thenReturn(Optional.of(question1));
 
                         // Act
                         listener.processQuestion(201L);
 
                         // Assert
-                        verify(cachedAvatarService, never()).getOrGenerateAvatar(anyString(), anyLong());
+                        verify(textToSpeechService, never()).generateAndSaveAudio(anyString(), anyLong());
                         verify(questionRepository, never()).save(any(Question.class));
                 }
 
@@ -259,19 +263,19 @@ class AvatarPipelineListenerTest {
                 @DisplayName("Should process question when avatarVideoUrl is blank string")
                 void testProcessQuestion_BlankAvatarUrl() {
                         // Arrange — blank string is treated as absent
-                        question1.setAvatarVideoUrl("   ");
+                        question1.setAudioUrl("   ");
                         when(questionRepository.findById(201L)).thenReturn(Optional.of(question1));
-                        when(cachedAvatarService.getOrGenerateAvatar(anyString(), eq(201L)))
-                                        .thenReturn("avatar-cache/new.mp4");
+                        when(textToSpeechService.generateAndSaveAudio(anyString(), eq(201L)))
+                                        .thenReturn("tts-audio/new.mp3");
                         when(questionRepository.save(any(Question.class))).thenAnswer(i -> i.getArgument(0));
 
                         // Act
                         listener.processQuestion(201L);
 
                         // Assert — should generate and save
-                        verify(cachedAvatarService).getOrGenerateAvatar(anyString(), eq(201L));
+                        verify(textToSpeechService).generateAndSaveAudio(anyString(), eq(201L));
                         verify(questionRepository)
-                                        .save(argThat(q -> "avatar-cache/new.mp4".equals(q.getAvatarVideoUrl())));
+                                        .save(argThat(q -> "tts-audio/new.mp3".equals(q.getAudioUrl())));
                 }
 
                 @Test
@@ -288,7 +292,7 @@ class AvatarPipelineListenerTest {
                 @DisplayName("Should propagate CachedAvatarService exceptions")
                 void testProcessQuestion_CachedAvatarServiceError() {
                         when(questionRepository.findById(201L)).thenReturn(Optional.of(question1));
-                        when(cachedAvatarService.getOrGenerateAvatar(anyString(), eq(201L)))
+                        when(textToSpeechService.generateAndSaveAudio(anyString(), eq(201L)))
                                         .thenThrow(new RuntimeException("ElevenLabs rate limit exceeded"));
 
                         assertThatThrownBy(() -> listener.processQuestion(201L))
@@ -401,8 +405,8 @@ class AvatarPipelineListenerTest {
                         when(questionRepository.findById(201L)).thenReturn(Optional.of(question1));
                         when(questionRepository.findById(202L)).thenReturn(Optional.of(question2));
                         when(questionRepository.findById(203L)).thenReturn(Optional.of(question3));
-                        when(cachedAvatarService.getOrGenerateAvatar(anyString(), anyLong()))
-                                        .thenReturn("avatar-cache/video.mp4");
+                        when(textToSpeechService.generateAndSaveAudio(anyString(), anyLong()))
+                                        .thenReturn("tts-audio/audio.mp3");
                         when(questionRepository.save(any(Question.class))).thenAnswer(i -> i.getArgument(0));
                         when(interviewRepository.findById(100L)).thenReturn(Optional.of(testInterview));
                         when(interviewRepository.save(any(Interview.class))).thenAnswer(i -> i.getArgument(0));
@@ -411,7 +415,7 @@ class AvatarPipelineListenerTest {
                         listener.onQuestionsCreated(event);
 
                         // Assert — all 3 questions processed
-                        verify(cachedAvatarService, times(3)).getOrGenerateAvatar(anyString(), anyLong());
+                        verify(textToSpeechService, times(3)).generateAndSaveAudio(anyString(), anyLong());
                         verify(questionRepository, times(3)).save(any(Question.class));
                         verify(interviewRepository).save(any(Interview.class));
                 }
@@ -423,8 +427,8 @@ class AvatarPipelineListenerTest {
                                         this, 100L, List.of(201L));
 
                         when(questionRepository.findById(201L)).thenReturn(Optional.of(question1));
-                        when(cachedAvatarService.getOrGenerateAvatar(anyString(), eq(201L)))
-                                        .thenReturn("avatar-cache/single.mp4");
+                        when(textToSpeechService.generateAndSaveAudio(anyString(), eq(201L)))
+                                        .thenReturn("tts-audio/single.mp3");
                         when(questionRepository.save(any(Question.class))).thenAnswer(i -> i.getArgument(0));
                         when(interviewRepository.findById(100L)).thenReturn(Optional.of(testInterview));
                         when(interviewRepository.save(any(Interview.class))).thenAnswer(i -> i.getArgument(0));
@@ -433,7 +437,7 @@ class AvatarPipelineListenerTest {
                         listener.onQuestionsCreated(event);
 
                         // Assert
-                        verify(cachedAvatarService, times(1)).getOrGenerateAvatar(anyString(), anyLong());
+                        verify(textToSpeechService, times(1)).generateAndSaveAudio(anyString(), anyLong());
                         verify(interviewRepository).save(argThat(i -> i.getStatus() == InterviewStatus.IN_PROGRESS));
                 }
         }
@@ -454,8 +458,8 @@ class AvatarPipelineListenerTest {
 
                         when(questionRepository.findById(201L)).thenReturn(Optional.of(question1));
                         when(questionRepository.findById(999L)).thenReturn(Optional.empty());
-                        when(cachedAvatarService.getOrGenerateAvatar(anyString(), eq(201L)))
-                                        .thenReturn("avatar-cache/abc.mp4");
+                        when(textToSpeechService.generateAndSaveAudio(anyString(), eq(201L)))
+                                        .thenReturn("tts-audio/abc.mp3");
                         when(questionRepository.save(any(Question.class))).thenAnswer(i -> i.getArgument(0));
                         when(interviewRepository.findById(100L)).thenReturn(Optional.of(testInterview));
                         when(interviewRepository.save(any(Interview.class))).thenAnswer(i -> i.getArgument(0));
@@ -473,7 +477,7 @@ class AvatarPipelineListenerTest {
                 @DisplayName("Should handle CachedAvatarService returning null S3 key")
                 void testNullS3KeyFromCachedAvatarService() {
                         when(questionRepository.findById(201L)).thenReturn(Optional.of(question1));
-                        when(cachedAvatarService.getOrGenerateAvatar(anyString(), eq(201L)))
+                        when(textToSpeechService.generateAndSaveAudio(anyString(), eq(201L)))
                                         .thenReturn(null);
                         when(questionRepository.save(any(Question.class))).thenAnswer(i -> i.getArgument(0));
 
@@ -481,7 +485,7 @@ class AvatarPipelineListenerTest {
                         listener.processQuestion(201L);
 
                         // Assert — saves with null (frontend will show text-only fallback)
-                        verify(questionRepository).save(argThat(q -> q.getAvatarVideoUrl() == null));
+                        verify(questionRepository).save(argThat(q -> q.getAudioUrl() == null));
                 }
         }
 }

@@ -309,6 +309,8 @@ public class SpeechToTextService {
 
         Map<String, Object> requestBody = new LinkedHashMap<>();
         requestBody.put("audio_url", audioUrl);
+        // FIX: AssemblyAI requires speech_models list.
+        requestBody.put("speech_models", List.of("universal-2"));
         requestBody.put("language_code", "en");
 
         String jsonBody;

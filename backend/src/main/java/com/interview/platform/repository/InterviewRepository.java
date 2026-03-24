@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
@@ -45,6 +46,15 @@ public interface InterviewRepository extends JpaRepository<Interview, Long> {
      * @return the number of interviews belonging to the user
      */
     long countByUserId(Long userId);
+
+    /**
+     * Count interviews created by user today (Issue 4: Daily Limit).
+     *
+     * @param userId the user whose interviews to count
+     * @param today  the date to count interviews for
+     * @return the number of interviews created today
+     */
+    long countByUserIdAndStartedAtAfter(Long userId, LocalDateTime today);
 
     /**
      * Find interviews stuck in a given status since before the cutoff time.

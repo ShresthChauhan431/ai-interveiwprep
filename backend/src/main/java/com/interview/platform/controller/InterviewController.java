@@ -74,14 +74,18 @@ public class InterviewController {
     // ════════════════════════════════════════════════════════════════
 
     /**
-     * AUDIT-FIX (Section 9a): Paginated list of the authenticated user's interviews.
+     * AUDIT-FIX (Section 9a): Paginated list of the authenticated user's
+     * interviews.
      *
-     * <p>Returns a {@link Page} of lightweight interview summary DTOs filtered
+     * <p>
+     * Returns a {@link Page} of lightweight interview summary DTOs filtered
      * to the current user only. Supports standard Spring Data pagination
-     * parameters: {@code page}, {@code size}, {@code sort}.</p>
+     * parameters: {@code page}, {@code size}, {@code sort}.
+     * </p>
      *
      * @param httpRequest the HTTP request (userId extracted from JWT)
-     * @param pageable    pagination parameters (default: page=0, size=20, sort=startedAt,desc)
+     * @param pageable    pagination parameters (default: page=0, size=20,
+     *                    sort=startedAt,desc)
      * @return a page of interview summaries
      */
     @GetMapping
@@ -90,9 +94,11 @@ public class InterviewController {
             @PageableDefault(size = 20, sort = "startedAt", direction = Sort.Direction.DESC) Pageable pageable) {
 
         Long userId = getUserIdFromRequest(httpRequest);
-        log.info("Listing interviews — user: {}, page: {}, size: {}", userId, pageable.getPageNumber(), pageable.getPageSize());
+        log.info("Listing interviews — user: {}, page: {}, size: {}", userId, pageable.getPageNumber(),
+                pageable.getPageSize());
 
-        // AUDIT-FIX: Filtered to authenticated user's interviews only via repository query
+        // AUDIT-FIX: Filtered to authenticated user's interviews only via repository
+        // query
         Page<Interview> interviewPage = interviewRepository.findByUserIdOrderByStartedAtDesc(userId, pageable);
 
         Page<InterviewDTO> dtoPage = interviewPage.map(interview -> {
@@ -308,14 +314,57 @@ public class InterviewController {
     }
 
     // ════════════════════════════════════════════════════════════════
+    // 6b. POST /api/interviews/{interviewId}/terminate (Proctoring)
+    // ════════════════════════════════════════════════════════════════
+
+    /**
+     * Terminate an interview due to proctoring violations.
+     *
+     * <p>
+     * Transitions the interview from {@code IN_PROGRESS} to
+     * {@code DISQUALIFIED}. Called by the frontend proctoring system
+     * when the candidate exceeds the maximum number of allowed
+     * violations (tab switches, window blur, face not detected).
+     * </p>
+     *
+     * @param interviewId the interview to terminate
+     * @param body        request body containing a "reason" string
+     * @param httpRequest the HTTP request (for user ID extraction)
+     * @return 200 OK with confirmation message
+     */
+    @PostMapping("/{interviewId}/terminate") // FIX: New endpoint for proctoring disqualification (Issue 3)
+    public ResponseEntity<Map<String, String>> terminateInterview(
+            @PathVariable Long interviewId,
+            @RequestBody Map<String, String> body,
+            HttpServletRequest httpRequest) {
+
+        Long userId = getUserIdFromRequest(httpRequest); // FIX: Verify authenticated user owns this interview
+        String reason = body.getOrDefault("reason", "Proctoring violation"); // FIX: Extract reason from request body
+        log.info("Terminating interview (proctoring) — user: {}, interview: {}, reason: {}", userId, interviewId,
+                reason);
+
+        String result = interviewService.terminateInterview(interviewId, userId, reason); // FIX: Delegate to service
+                                                                                          // for state machine
+                                                                                          // validation
+
+        return ResponseEntity.ok(Map.of(
+                "message", result,
+                "interviewId", String.valueOf(interviewId),
+                "status", "DISQUALIFIED")); // FIX: Return DISQUALIFIED status to frontend
+    }
+
+    // ════════════════════════════════════════════════════════════════
     // 7. GET /api/interviews/history
     // ════════════════════════════════════════════════════════════════
 
     @GetMapping("/history")
-    public ResponseEntity<List<InterviewDTO>> getInterviewHistory(HttpServletRequest httpRequest) {
+    public ResponseEntity<List<InterviewDTO>> getInterviewHistory(
+            HttpServletRequest httpRequest,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
 
         Long userId = getUserIdFromRequest(httpRequest);
-        List<InterviewDTO> history = interviewService.getInterviewHistory(userId);
+        List<InterviewDTO> history = interviewService.getInterviewHistory(userId, page, size);
 
         return ResponseEntity.ok(history);
     }
@@ -372,14 +421,22 @@ public class InterviewController {
             return ResponseEntity.ok(feedbackResponse);
         }
 
-        // Check if interview is still processing
+        // Check if interview is still processing or failed
         var interview = interviewRepository.findById(interviewId);
-        if (interview.isPresent() && interview.get().getStatus() == InterviewStatus.PROCESSING) {
-            Map<String, String> processingResponse = new LinkedHashMap<>();
-            processingResponse.put("status", "PROCESSING");
-            processingResponse.put("message", "Feedback is being generated. Please check back shortly.");
+        if (interview.isPresent()) {
+            if (interview.get().getStatus() == InterviewStatus.PROCESSING) {
+                Map<String, String> processingResponse = new LinkedHashMap<>();
+                processingResponse.put("status", "PROCESSING");
+                processingResponse.put("message", "Feedback is being generated. Please check back shortly.");
 
-            return ResponseEntity.status(HttpStatus.ACCEPTED).body(processingResponse);
+                return ResponseEntity.status(HttpStatus.ACCEPTED).body(processingResponse);
+            } else if (interview.get().getStatus() == InterviewStatus.FAILED) {
+                Map<String, String> failedResponse = new LinkedHashMap<>();
+                failedResponse.put("status", "FAILED");
+                failedResponse.put("message", "Analysis failed. Please contact support.");
+
+                return ResponseEntity.ok(failedResponse);
+            }
         }
 
         return ResponseEntity.status(HttpStatus.NOT_FOUND)

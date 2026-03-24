@@ -1,5 +1,6 @@
-import api from "./api.service";
+import api, { longRunningApi } from "./api.service"; // FIX: Import longRunningApi for slow AI endpoints that exceed the default 30s timeout
 import axios from "axios";
+import { API_BASE_URL } from "../utils/constants"; // FIX: Import API_BASE_URL to detect when upload URL targets our own backend vs S3
 import {
   InterviewDTO,
   PresignedUrlResponse,
@@ -40,13 +41,30 @@ export const interviewService = {
     numQuestions?: number,
   ): Promise<InterviewDTO> {
     try {
-      const response = await api.post<InterviewDTO>("/api/interviews/start", {
-        resumeId,
-        jobRoleId,
-        numQuestions,
-      });
+      const response = await longRunningApi.post<InterviewDTO>(
+        "/api/interviews/start",
+        {
+          // FIX: Use longRunningApi (5 min timeout) instead of api (30s timeout) — Ollama question generation on CPU can take 60–120s+
+          resumeId,
+          jobRoleId,
+          numQuestions,
+        },
+      );
       return response.data;
     } catch (error: any) {
+      // FIX: Provide actionable error messages that distinguish timeout from network failure
+      if (
+        error?.status === 0 &&
+        (error?.message?.includes("timeout") ||
+          error?.message?.includes("timed out"))
+      ) {
+        throw new Error(
+          "Interview setup is taking longer than expected. This is normal for " +
+          "the first interview — AI is generating your questions and avatar " +
+          "videos. Please wait and try again, or check if Ollama is running: " +
+          'run "ollama serve" in your terminal.',
+        );
+      }
       throw error?.message ? error : new Error("Failed to start interview.");
     }
   },
@@ -61,7 +79,7 @@ export const interviewService = {
    *
    * P1: Used by useInterviewPolling hook to track avatar video
    * generation progress. The response includes per-question
-   * avatarVideoUrl which will be null until the avatar is ready.
+   * avatarVideoUrl kept for backward compat; audioUrl is now the primary field. // FIX: avatarVideoUrl kept for backward compat; audioUrl is now the primary field
    */
   async getInterview(interviewId: number): Promise<InterviewDTO> {
     try {
@@ -139,35 +157,74 @@ export const interviewService = {
     onProgress?: (progress: number) => void,
   ): Promise<void> {
     try {
-      // Use raw axios — NOT the `api` instance which adds Authorization headers.
-      // S3 presigned URLs include their own authentication via query parameters.
-      // Sending an Authorization header would cause S3 to reject the request
-      // with "Only one auth mechanism allowed".
-      await axios.put(uploadUrl, videoBlob, {
-        headers: {
-          "Content-Type": contentType,
-        },
-        // Disable any default transformRequest that might modify the body
-        transformRequest: [(data: Blob) => data],
-        // Track upload progress for UI
-        onUploadProgress: (progressEvent: {
-          loaded: number;
-          total?: number;
-        }) => {
-          if (onProgress && progressEvent.total) {
-            const percent = Math.round(
-              (progressEvent.loaded * 100) / progressEvent.total,
-            );
-            onProgress(percent);
-          }
-        },
-        // No timeout — large videos may take a while on slow connections
-        timeout: 0,
-      });
+      // FIX: Detect whether the upload URL targets our own backend (local storage) or actual S3
+      // Local storage URLs look like http://localhost:8081/api/files/upload-raw/...
+      // S3 presigned URLs look like https://s3.amazonaws.com/... with query-string auth
+      const isOwnBackend =
+        uploadUrl.startsWith(API_BASE_URL) || // FIX: Matches configured backend base URL
+        uploadUrl.includes("/api/files/"); // FIX: Fallback detection for local file upload endpoints
+
+      if (isOwnBackend) {
+        // FIX: Use authenticated `api` instance for our own backend — it needs the JWT header
+        // The local FileController requires authentication (SecurityConfig: /api/files/** = authenticated)
+        // FIX: Strip the base URL prefix so axios doesn't double it (api instance already has baseURL configured)
+        const relativeUrl = uploadUrl.startsWith(API_BASE_URL)
+          ? uploadUrl.substring(API_BASE_URL.length) // FIX: e.g. "http://localhost:8081/api/files/..." → "/api/files/..."
+          : uploadUrl;
+        await api.put(relativeUrl, videoBlob, {
+          headers: {
+            "Content-Type": contentType, // FIX: Set correct content type for the upload
+          },
+          transformRequest: [(data: Blob) => data], // FIX: Don't transform the blob body
+          onUploadProgress: (progressEvent: {
+            loaded: number;
+            total?: number;
+          }) => {
+            if (onProgress && progressEvent.total) {
+              const percent = Math.round(
+                (progressEvent.loaded * 100) / progressEvent.total,
+              );
+              onProgress(percent);
+            }
+          },
+          timeout: 120000, // FIX: 2 minute timeout for local uploads
+        });
+      } else {
+        // Use raw axios — NOT the `api` instance which adds Authorization headers.
+        // S3 presigned URLs include their own authentication via query parameters.
+        // Sending an Authorization header would cause S3 to reject the request
+        // with "Only one auth mechanism allowed".
+        await axios.put(uploadUrl, videoBlob, {
+          headers: {
+            "Content-Type": contentType,
+          },
+          // Disable any default transformRequest that might modify the body
+          transformRequest: [(data: Blob) => data],
+          // Track upload progress for UI
+          onUploadProgress: (progressEvent: {
+            loaded: number;
+            total?: number;
+          }) => {
+            if (onProgress && progressEvent.total) {
+              const percent = Math.round(
+                (progressEvent.loaded * 100) / progressEvent.total,
+              );
+              onProgress(percent);
+            }
+          },
+          // No timeout — large videos may take a while on slow connections
+          timeout: 0,
+        });
+      }
     } catch (error: any) {
-      // Provide a more helpful error message for S3 upload failures
+      // Provide a more helpful error message for upload failures
       if (axios.isAxiosError(error)) {
         const status = error.response?.status;
+        if (status === 401) {
+          throw new Error(
+            "Session expired. Please log in again and retry.", // FIX: Clear message for auth failure on upload
+          );
+        }
         if (status === 403) {
           throw new Error(
             "Upload URL expired or invalid. Please try recording again.",
@@ -363,33 +420,96 @@ export const interviewService = {
    */
   async getFeedback(interviewId: number): Promise<Feedback> {
     try {
-      const response = await api.get<Feedback>(
+      const response = await api.get<any>( // FIX: Use any since backend returns different shapes for COMPLETED vs PROCESSING
         `/api/interviews/${interviewId}/feedback`,
       );
 
-      // Backend returns 202 when still processing
+      // FIX: Backend returns 202 when still processing
       if ((response as any).status === 202) {
         throw new Error(
           "Feedback is still being generated. Please try again shortly.",
         );
       }
 
-      return response.data;
-    } catch (error: any) {
-      if (
-        error?.status === 202 ||
-        error?.message?.includes("still being generated")
-      ) {
+      const data = response.data;
+
+      // FIX: Check for FAILED status from backend and return it so UI can stop polling
+      if (data.status === "FAILED") {
+        return data as Feedback;
+      }
+
+      // FIX: Check for PROCESSING status returned as 200 (edge case)
+      if (data.status === "PROCESSING") {
         throw new Error(
           "Feedback is still being generated. Please try again shortly.",
         );
+      }
+
+      // FIX: Parse JSON string arrays from backend — strengths/weaknesses/recommendations may be JSON strings or arrays
+      const parseList = (val: any): string[] => {
+        if (Array.isArray(val)) return val; // FIX: Already an array, use as-is
+        if (typeof val === "string") {
+          try {
+            const parsed = JSON.parse(val); // FIX: Try parsing JSON string like '["item1","item2"]'
+            if (Array.isArray(parsed)) return parsed;
+          } catch {
+            // FIX: Not valid JSON — treat as single-item list
+          }
+          return val.trim() ? [val] : [];
+        }
+        return [];
+      };
+
+      // FIX: Normalize backend response into Feedback type with properly parsed arrays
+      const feedback: Feedback = {
+        id: data.id || 0,
+        interviewId: interviewId,
+        overallScore: data.overallScore ?? 0,
+        strengths: parseList(data.strengths), // FIX: Parse JSON string or array
+        weaknesses: parseList(data.weaknesses), // FIX: Parse JSON string or array
+        recommendations: parseList(data.recommendations), // FIX: Parse JSON string or array
+        detailedAnalysis: data.detailedAnalysis || "",
+      };
+
+      return feedback;
+    } catch (error: any) {
+      if (
+        error?.status === 202 ||
+        error?.status === "FAILED" ||
+        error?.message?.includes("still being generated")
+      ) {
+        throw error; // FIX: Re-throw processing/failed errors as-is for caller to handle
       }
       throw error?.message ? error : new Error("Failed to fetch feedback.");
     }
   },
 
   // ════════════════════════════════════════════════════════════════
-  // 8. Delete Interview
+  // 8. Terminate Interview (Proctoring Disqualification)
+  // ════════════════════════════════════════════════════════════════
+
+  /**
+   * Terminate an interview due to proctoring violations.
+   * POST /api/interviews/{interviewId}/terminate
+   *
+   * Transitions the interview from IN_PROGRESS → DISQUALIFIED.
+   * Called by the proctoring system when the candidate exceeds
+   * the maximum number of violations.
+   *
+   * @param interviewId - The interview to terminate
+   * @param reason      - Human-readable reason for termination
+   */
+  async terminateInterview(interviewId: number, reason: string): Promise<void> {
+    try {
+      await api.post(`/api/interviews/${interviewId}/terminate`, { reason }); // FIX: POST to terminate endpoint for proctoring disqualification
+    } catch (error: any) {
+      // FIX: Log but don't throw — frontend should navigate to disqualified page even if backend call fails
+      console.error("Failed to terminate interview on backend:", error);
+    }
+  },
+
+  // ════════════════════════════════════════════════════════════════
+  // 9. Delete Interview
   // ════════════════════════════════════════════════════════════════
 
   /**

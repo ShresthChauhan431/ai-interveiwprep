@@ -139,13 +139,42 @@ const InterviewStart: React.FC<InterviewStartProps> = ({ onStart }) => {
         selectedJobRole,
         numQuestions === 0 ? undefined : numQuestions,
       );
-      onStart(result.interviewId);
+      onStart(result.interviewId); // FIX: Navigate to interview session on success
     } catch (err: any) {
-      setError(err.message || "Failed to start interview. Please try again.");
+      // FIX: Distinguish timeout, offline, and server errors with actionable messages instead of generic "Failed to start interview"
+      const msg = err?.message || "";
+      if (
+        err?.status === 0 && // FIX: status 0 means no HTTP response was received (timeout or network)
+        (msg.includes("timeout") || msg.includes("timed out"))
+      ) {
+        setError(
+          "Taking longer than expected. Ollama may be loading " +
+            "the AI model for the first time (can take 2-3 minutes). Please wait " +
+            "and try again, or check if Ollama is running: " +
+            'run "ollama serve" in your terminal.',
+        ); // FIX: Timeout-specific error with Ollama troubleshooting hint
+      } else if (!navigator.onLine) {
+        setError(
+          "No internet connection. Please check your network and try again.",
+        ); // FIX: Detect actual offline state instead of misleading "network error"
+      } else {
+        setError(
+          msg ||
+            "Failed to start interview. Please ensure the backend server " +
+              "and Ollama are running.",
+        ); // FIX: Fallback message hints at backend/Ollama as likely root cause
+      }
     } finally {
       setIsLoading(false);
     }
-  }, [resumeId, selectedJobRole, hasPermission, checkPermissions, onStart, numQuestions]);
+  }, [
+    resumeId,
+    selectedJobRole,
+    hasPermission,
+    checkPermissions,
+    onStart,
+    numQuestions,
+  ]);
 
   // ============================================================
   // Validations
@@ -311,17 +340,17 @@ const InterviewStart: React.FC<InterviewStartProps> = ({ onStart }) => {
             Number of Questions
           </Typography>
           <FormControl fullWidth size="small">
-            <InputLabel id="num-questions-label">Select number of questions</InputLabel>
+            <InputLabel id="num-questions-label">
+              Select number of questions
+            </InputLabel>
             <Select
               labelId="num-questions-label"
               value={numQuestions}
               label="Select number of questions"
               onChange={(e) => setNumQuestions(e.target.value as number)}
             >
-              <MenuItem value={0}>
-                Default (AI Decides)
-              </MenuItem>
-              {[5, 10, 15, 20].map((num) => (
+              <MenuItem value={0}>Default (AI Decides)</MenuItem>
+              {[3, 5, 7, 10].map((num) => (
                 <MenuItem key={num} value={num}>
                   {num} Questions
                 </MenuItem>
@@ -400,8 +429,21 @@ const InterviewStart: React.FC<InterviewStartProps> = ({ onStart }) => {
         disabled={!canStart}
         sx={{ py: 1.5, fontSize: "1rem", borderRadius: 2 }}
       >
-        {isLoading ? "Starting Interview..." : "Start Interview"}
+        {isLoading
+          ? "Generating your interview questions..."
+          : "Start Interview"}
       </Button>
+      {/* FIX: Show informational message during loading so user knows what's happening */}
+      {isLoading && (
+        <Typography
+          variant="body2"
+          color="text.secondary"
+          sx={{ mt: 2, textAlign: "center" }}
+        >
+          This may take 1-2 minutes while the AI generates personalized
+          questions...
+        </Typography>
+      )}
     </Container>
   );
 };

@@ -1,0 +1,132 @@
+[INFO] Scanning for projects...
+Downloading from central: https://repo.maven.apache.org/maven2/org/springframework/boot/maven-metadata.xml
+Downloading from central: https://repo.maven.apache.org/maven2/org/jooq/maven-metadata.xml
+Downloading from central: https://repo.maven.apache.org/maven2/io/github/git-commit-id/maven-metadata.xml
+Downloading from central: https://repo.maven.apache.org/maven2/org/flywaydb/maven-metadata.xml
+Progress (1): 255 BProgress (2): 255 B | 398 BProgress (3): 255 B | 398 B | 249 B                                   Downloaded from central: https://repo.maven.apache.org/maven2/io/github/git-commit-id/maven-metadata.xml (255 B at 1.2 kB/s)
+Downloaded from central: https://repo.maven.apache.org/maven2/org/springframework/boot/maven-metadata.xml (249 B at 1.1 kB/s)
+Downloaded from central: https://repo.maven.apache.org/maven2/org/jooq/maven-metadata.xml (398 B at 1.8 kB/s)
+Downloading from central: https://repo.maven.apache.org/maven2/org/liquibase/maven-metadata.xml
+Downloading from central: https://repo.maven.apache.org/maven2/org/graalvm/buildtools/maven-metadata.xml
+Downloading from central: https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/maven-metadata.xml
+Progress (1): 394 BProgress (2): 394 B | 242 B                           Downloaded from central: https://repo.maven.apache.org/maven2/org/liquibase/maven-metadata.xml (394 B at 20 kB/s)
+Downloading from central: https://repo.maven.apache.org/maven2/org/apache/maven/plugins/maven-metadata.xml
+Downloaded from central: https://repo.maven.apache.org/maven2/org/graalvm/buildtools/maven-metadata.xml (242 B at 12 kB/s)
+Downloading from central: https://repo.maven.apache.org/maven2/org/codehaus/mojo/maven-metadata.xml
+Progress (1): 375 B                   Downloaded from central: https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/maven-metadata.xml (375 B at 16 kB/s)
+Progress (1): 3.1 kBProgress (2): 3.1 kB | 4.6 kBProgress (2): 7.7 kB | 4.6 kBProgress (2): 7.7 kB | 9.7 kBProgress (2): 12 kB | 9.7 kB Progress (2): 17 kB | 9.7 kBProgress (2): 20 kB | 9.7 kBProgress (2): 21 kB | 9.7 kBProgress (2): 21 kB | 14 kB                            Downloaded from central: https://repo.maven.apache.org/maven2/org/apache/maven/plugins/maven-metadata.xml (14 kB at 510 kB/s)
+Downloaded from central: https://repo.maven.apache.org/maven2/org/codehaus/mojo/maven-metadata.xml (21 kB at 404 kB/s)
+Progress (1): 234 B                   Downloaded from central: https://repo.maven.apache.org/maven2/org/flywaydb/maven-metadata.xml (234 B at 750 B/s)
+[INFO] 
+[INFO] -----------------------< com.interview:platform >-----------------------
+[INFO] Building interview-platform 0.0.1-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] >>> spring-boot:3.2.2:run (default-cli) > test-compile @ platform >>>
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ platform ---
+[INFO] Copying 2 resources from src/main/resources to target/classes
+[INFO] Copying 5 resources from src/main/resources to target/classes
+[INFO] 
+[INFO] --- compiler:3.13.0:compile (default-compile) @ platform ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ platform ---
+[INFO] Copying 2 resources from src/test/resources to target/test-classes
+[INFO] 
+[INFO] --- compiler:3.13.0:testCompile (default-testCompile) @ platform ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] <<< spring-boot:3.2.2:run (default-cli) < test-compile @ platform <<<
+[INFO] 
+[INFO] 
+[INFO] --- spring-boot:3.2.2:run (default-cli) @ platform ---
+[INFO] Attaching agents: []
+Standard Commons Logging discovery in action with spring-jcl: please remove commons-logging.jar from classpath in order to avoid potential conflicts
+
+  .   ____          _            __ _ _
+ /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
+( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
+ \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
+  '  |____| .__|_| |_|_| |_\__, | / / / /
+ =========|_|==============|___/=/_/_/_/
+ :: Spring Boot ::                (v3.2.2)
+
+2026-03-11T00:14:38.974+05:30  INFO 89342 --- [           main] c.i.p.InterviewPlatformApplication       : Starting InterviewPlatformApplication using Java 25.0.1 with PID 89342 (/Users/shresthchauhan/Documents/Projects/ai Interview/ai-interveiwprep/backend/target/classes started by shresthchauhan in /Users/shresthchauhan/Documents/Projects/ai Interview/ai-interveiwprep/backend)
+2026-03-11T00:14:38.975+05:30  INFO 89342 --- [           main] c.i.p.InterviewPlatformApplication       : No active profile set, falling back to 1 default profile: "default"
+2026-03-11T00:14:39.362+05:30  INFO 89342 --- [           main] .s.d.r.c.RepositoryConfigurationDelegate : Bootstrapping Spring Data JPA repositories in DEFAULT mode.
+2026-03-11T00:14:39.388+05:30  INFO 89342 --- [           main] .s.d.r.c.RepositoryConfigurationDelegate : Finished Spring Data repository scanning in 23 ms. Found 9 JPA repository interfaces.
+WARNING: A restricted method in java.lang.System has been called
+WARNING: java.lang.System::load has been called by org.apache.tomcat.jni.Library in an unnamed module (file:/Users/shresthchauhan/.m2/repository/org/apache/tomcat/embed/tomcat-embed-core/10.1.18/tomcat-embed-core-10.1.18.jar)
+WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
+WARNING: Restricted methods will be blocked in a future release unless native access is enabled
+
+2026-03-11T00:14:39.787+05:30  INFO 89342 --- [           main] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat initialized with port 8081 (http)
+2026-03-11T00:14:39.793+05:30  INFO 89342 --- [           main] o.apache.catalina.core.StandardService   : Starting service [Tomcat]
+2026-03-11T00:14:39.793+05:30  INFO 89342 --- [           main] o.apache.catalina.core.StandardEngine    : Starting Servlet engine: [Apache Tomcat/10.1.18]
+2026-03-11T00:14:39.818+05:30  INFO 89342 --- [           main] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring embedded WebApplicationContext
+2026-03-11T00:14:39.819+05:30  INFO 89342 --- [           main] w.s.c.ServletWebServerApplicationContext : Root WebApplicationContext: initialization completed in 828 ms
+Standard Commons Logging discovery in action with spring-jcl: please remove commons-logging.jar from classpath in order to avoid potential conflicts
+2026-03-11T00:14:39.968+05:30  INFO 89342 --- [           main] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Starting...
+2026-03-11T00:14:40.121+05:30  INFO 89342 --- [           main] com.zaxxer.hikari.pool.HikariPool        : HikariPool-1 - Added connection com.mysql.cj.jdbc.ConnectionImpl@2862271a
+2026-03-11T00:14:40.122+05:30  INFO 89342 --- [           main] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Start completed.
+2026-03-11T00:14:40.334+05:30  INFO 89342 --- [           main] o.f.c.internal.license.VersionPrinter    : Flyway Community Edition 9.22.3 by Redgate
+2026-03-11T00:14:40.334+05:30  INFO 89342 --- [           main] o.f.c.internal.license.VersionPrinter    : See release notes here: https://rd.gt/416ObMi
+2026-03-11T00:14:40.334+05:30  INFO 89342 --- [           main] o.f.c.internal.license.VersionPrinter    : 
+2026-03-11T00:14:40.356+05:30  INFO 89342 --- [           main] org.flywaydb.core.FlywayExecutor         : Database: jdbc:mysql://localhost:3306/interview_platform (MySQL 8.0)
+2026-03-11T00:14:40.395+05:30  INFO 89342 --- [           main] o.f.core.internal.command.DbMigrate      : Current version of schema `interview_platform`: 5
+2026-03-11T00:14:40.395+05:30  WARN 89342 --- [           main] o.f.core.internal.command.DbMigrate      : outOfOrder mode is active. Migration of schema `interview_platform` may not be reproducible.
+2026-03-11T00:14:40.398+05:30  INFO 89342 --- [           main] o.f.core.internal.command.DbMigrate      : Schema `interview_platform` is up to date. No migration necessary.
+2026-03-11T00:14:40.453+05:30  INFO 89342 --- [           main] o.hibernate.jpa.internal.util.LogHelper  : HHH000204: Processing PersistenceUnitInfo [name: default]
+2026-03-11T00:14:40.481+05:30  INFO 89342 --- [           main] org.hibernate.Version                    : HHH000412: Hibernate ORM core version 6.4.1.Final
+2026-03-11T00:14:40.494+05:30  INFO 89342 --- [           main] o.h.c.internal.RegionFactoryInitiator    : HHH000026: Second-level cache disabled
+2026-03-11T00:14:40.570+05:30  INFO 89342 --- [           main] o.s.o.j.p.SpringPersistenceUnitInfo      : No LoadTimeWeaver setup: ignoring JPA class transformer
+2026-03-11T00:14:40.597+05:30  WARN 89342 --- [           main] org.hibernate.orm.deprecation            : HHH90000025: MySQLDialect does not need to be specified explicitly using 'hibernate.dialect' (remove the property setting and it will be selected by default)
+2026-03-11T00:14:41.116+05:30  INFO 89342 --- [           main] o.h.e.t.j.p.i.JtaPlatformInitiator       : HHH000489: No JTA platform available (set 'hibernate.transaction.jta.platform' to enable JTA platform integration)
+2026-03-11T00:14:41.137+05:30  INFO 89342 --- [           main] j.LocalContainerEntityManagerFactoryBean : Initialized JPA EntityManagerFactory for persistence unit 'default'
+2026-03-11T00:14:41.175+05:30  INFO 89342 --- [           main] c.i.platform.config.SecurityConfig       : CORS configured with allowed origins: http://localhost:3002
+2026-03-11T00:14:41.180+05:30  INFO 89342 --- [           main] c.i.platform.config.StorageConfig        : Local file storage initialized: path=/Users/shresthchauhan/Documents/Projects/ai Interview/ai-interveiwprep/backend/uploads (configured as './uploads'), baseUrl=http://localhost:8081
+2026-03-11T00:14:41.532+05:30  INFO 89342 --- [           main] c.i.platform.controller.FileController   : FileController initialized with storage root: /Users/shresthchauhan/Documents/Projects/ai Interview/ai-interveiwprep/backend/uploads
+2026-03-11T00:14:41.553+05:30  INFO 89342 --- [           main] o.s.d.j.r.query.QueryEnhancerFactory     : Hibernate is in classpath; If applicable, HQL parser will be used.
+2026-03-11T00:14:41.890+05:30  INFO 89342 --- [           main] c.i.platform.config.ResilienceConfig     : Resilience4j RetryRegistry initialized: maxAttempts=3, waitDuration=1000ms, backoffMultiplier=2.0
+2026-03-11T00:14:41.908+05:30  INFO 89342 --- [           main] c.i.platform.config.ResilienceConfig     : Resilience4j CircuitBreakerRegistry initialized: failureRateThreshold=50.0%, slidingWindowSize=10, waitDurationInOpenState=60s
+2026-03-11T00:14:41.935+05:30  WARN 89342 --- [           main] c.i.platform.service.OllamaService       : Ollama is NOT reachable at http://localhost:11434. Question generation will fail. Run 'ollama serve' to start it. Error: I/O error on GET request for "http://localhost:11434/api/tags": Connection refused
+2026-03-11T00:14:41.938+05:30  INFO 89342 --- [           main] c.i.p.service.VideoStorageService        : VideoStorageService initialized with basePath: /Users/shresthchauhan/Documents/Projects/ai Interview/ai-interveiwprep/backend/uploads
+2026-03-11T00:14:42.114+05:30  WARN 89342 --- [           main] JpaBaseConfiguration$JpaWebConfiguration : spring.jpa.open-in-view is enabled by default. Therefore, database queries may be performed during view rendering. Explicitly configure spring.jpa.open-in-view to disable this warning
+2026-03-11T00:14:42.317+05:30  INFO 89342 --- [           main] o.s.b.a.e.web.EndpointLinksResolver      : Exposing 1 endpoint(s) beneath base path '/actuator'
+2026-03-11T00:14:42.378+05:30  INFO 89342 --- [           main] o.s.s.web.DefaultSecurityFilterChain     : Will secure any request with [org.springframework.security.web.session.DisableEncodeUrlFilter@57149e0a, org.springframework.security.web.context.request.async.WebAsyncManagerIntegrationFilter@6b85fabc, org.springframework.security.web.context.SecurityContextHolderFilter@5a5fb5ea, org.springframework.security.web.header.HeaderWriterFilter@27ad94b3, org.springframework.web.filter.CorsFilter@62041e5f, org.springframework.security.web.authentication.logout.LogoutFilter@2d29b8d3, com.interview.platform.config.JwtAuthenticationFilter@37ffe4f3, org.springframework.security.web.savedrequest.RequestCacheAwareFilter@3a7243e1, org.springframework.security.web.servletapi.SecurityContextHolderAwareRequestFilter@302f535b, org.springframework.security.web.authentication.AnonymousAuthenticationFilter@18bb7eca, org.springframework.security.web.session.SessionManagementFilter@ecd7bee, org.springframework.security.web.access.ExceptionTranslationFilter@3990c36c, org.springframework.security.web.access.intercept.AuthorizationFilter@2531c319]
+2026-03-11T00:14:42.788+05:30  WARN 89342 --- [           main] ConfigServletWebServerApplicationContext : Exception encountered during context initialization - cancelling refresh attempt: org.springframework.context.ApplicationContextException: Failed to start bean 'webServerStartStop'
+2026-03-11T00:14:42.790+05:30  INFO 89342 --- [           main] j.LocalContainerEntityManagerFactoryBean : Closing JPA EntityManagerFactory for persistence unit 'default'
+2026-03-11T00:14:42.791+05:30  INFO 89342 --- [           main] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown initiated...
+2026-03-11T00:14:42.797+05:30  INFO 89342 --- [           main] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown completed.
+2026-03-11T00:14:42.806+05:30  INFO 89342 --- [           main] .s.b.a.l.ConditionEvaluationReportLogger : 
+
+Error starting ApplicationContext. To display the condition evaluation report re-run your application with 'debug' enabled.
+2026-03-11T00:14:42.812+05:30 ERROR 89342 --- [           main] o.s.b.d.LoggingFailureAnalysisReporter   : 
+
+***************************
+APPLICATION FAILED TO START
+***************************
+
+Description:
+
+Web server failed to start. Port 8081 was already in use.
+
+Action:
+
+Identify and stop the process that's listening on port 8081 or configure this application to listen on another port.
+
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD FAILURE
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  5.354 s
+[INFO] Finished at: 2026-03-11T00:14:42+05:30
+[INFO] ------------------------------------------------------------------------
+[ERROR] Failed to execute goal org.springframework.boot:spring-boot-maven-plugin:3.2.2:run (default-cli) on project platform: Process terminated with exit code: 1 -> [Help 1]
+[ERROR] 
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR] 
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoExecutionException

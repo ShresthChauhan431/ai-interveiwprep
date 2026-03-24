@@ -73,4 +73,8 @@ public class JobRole {
     public void setActive(Boolean active) {
         this.active = active;
     }
+
+    public boolean isActive() {
+        return active != null && active;
+    }
 }

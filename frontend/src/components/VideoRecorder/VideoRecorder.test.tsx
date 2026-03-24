@@ -126,9 +126,12 @@ describe('VideoRecorder Component', () => {
             mockMediaPermissionsReturn.hasPermission = true;
         });
 
-        test('shows "Start Recording" button when permission is granted', () => {
-            renderRecorder();
-            expect(screen.getByRole('button', { name: /start recording/i })).toBeInTheDocument();
+        test('shows "Start Recording Now" button when permission is granted and avatar is speaking', () => {
+            mockMediaPermissionsReturn.hasPermission = true;
+            renderRecorder({ isAvatarSpeaking: true });
+            // When avatar stops speaking, the auto-start countdown begins.
+            // While avatar is speaking, no start button or countdown appears.
+            expect(screen.getByText(/camera active/i)).toBeInTheDocument();
         });
 
         test('shows max duration text', () => {
@@ -136,11 +139,13 @@ describe('VideoRecorder Component', () => {
             expect(screen.getByText(/maximum duration: 03:00/i)).toBeInTheDocument();
         });
 
-        test('calls startRecording when "Start Recording" is clicked', () => {
+        test('starts recording via auto-start countdown', async () => {
             renderRecorder();
 
-            fireEvent.click(screen.getByRole('button', { name: /start recording/i }));
-            expect(mockStartRecording).toHaveBeenCalledTimes(1);
+            // The auto-start countdown triggers startRecording automatically after reaching 0
+            await waitFor(() => {
+                expect(mockStartRecording).toHaveBeenCalledTimes(1);
+            }, { timeout: 5000 });
         });
     });
 
@@ -149,23 +154,23 @@ describe('VideoRecorder Component', () => {
     // ──────────────────────────────────────────────────────────
 
     describe('Recording', () => {
-        test('shows stop button and timer while recording', () => {
+        test('shows finish button and timer while recording', () => {
             mockMediaPermissionsReturn.hasPermission = true;
             mockVideoRecordingReturn.isRecording = true;
             mockVideoRecordingReturn.recordingTime = 42;
             renderRecorder();
 
-            expect(screen.getByRole('button', { name: /stop recording/i })).toBeInTheDocument();
+            expect(screen.getByRole('button', { name: /finish answering/i })).toBeInTheDocument();
             expect(screen.getByText('00:42')).toBeInTheDocument();
             expect(screen.getByText(/recording\.\.\./i)).toBeInTheDocument();
         });
 
-        test('calls stopRecording when "Stop Recording" is clicked', () => {
+        test('calls stopRecording when "Finish Answering & Submit" is clicked', () => {
             mockMediaPermissionsReturn.hasPermission = true;
             mockVideoRecordingReturn.isRecording = true;
             renderRecorder();
 
-            fireEvent.click(screen.getByRole('button', { name: /stop recording/i }));
+            fireEvent.click(screen.getByRole('button', { name: /finish answering/i }));
             expect(mockStopRecording).toHaveBeenCalledTimes(1);
         });
     });

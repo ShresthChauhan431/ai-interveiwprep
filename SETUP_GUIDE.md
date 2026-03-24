@@ -138,8 +138,10 @@ The backend will:
 Open a **new terminal**:
 
 ```bash
+
 cd frontend
-npm install
+npm install //if not works then npm install --legacy-peer-deps
+
 npm start
 ```
 

@@ -7,14 +7,17 @@ import com.interview.platform.repository.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDateTime;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import org.springframework.web.client.ResourceAccessException; // FIX: Import for catching Ollama connection errors
 
 /**
  * Core service for managing interview lifecycle operations.
@@ -97,6 +100,7 @@ public class InterviewService {
     private final VideoStorageService videoStorageService;
     private final SpeechToTextService speechToTextService;
     private final AIFeedbackService aiFeedbackService;
+    private final TextToSpeechService textToSpeechService; // FIX: Added TTS service for generating audio per question
     private final ApplicationEventPublisher eventPublisher;
 
     public InterviewService(InterviewRepository interviewRepository,
@@ -109,6 +113,7 @@ public class InterviewService {
             VideoStorageService videoStorageService,
             SpeechToTextService speechToTextService,
             AIFeedbackService aiFeedbackService,
+            TextToSpeechService textToSpeechService, // FIX: Inject TTS service for per-question audio generation
             ApplicationEventPublisher eventPublisher) {
         this.interviewRepository = interviewRepository;
         this.resumeRepository = resumeRepository;
@@ -120,6 +125,7 @@ public class InterviewService {
         this.videoStorageService = videoStorageService;
         this.speechToTextService = speechToTextService;
         this.aiFeedbackService = aiFeedbackService;
+        this.textToSpeechService = textToSpeechService; // FIX: Store TTS service reference
         this.eventPublisher = eventPublisher;
     }
 
@@ -171,6 +177,14 @@ public class InterviewService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found: " + userId));
 
+        // Issue 4: Check daily interview limit
+        LocalDateTime todayStart = LocalDate.now().atStartOfDay();
+        long interviewsToday = interviewRepository.countByUserIdAndStartedAtAfter(userId, todayStart);
+        int maxInterviewsPerDay = 10; // Configurable limit
+        if (interviewsToday >= maxInterviewsPerDay) {
+            throw new RuntimeException("Daily interview limit reached. You can create up to " + maxInterviewsPerDay + " interviews per day. Please try again tomorrow.");
+        }
+
         // ── Validate and fetch resume ────────────────────────────
         Resume resume = resumeRepository.findById(resumeId)
                 .orElseThrow(() -> new RuntimeException("Resume not found: " + resumeId));
@@ -181,42 +195,81 @@ public class InterviewService {
 
         String resumeText = resume.getExtractedText();
         if (resumeText == null || resumeText.isBlank()) {
-            throw new RuntimeException("Resume text has not been extracted. Please re-upload the resume.");
+            // FIX: Don't crash — use fallback text so generic interview can proceed
+            resumeText = "Resume text could not be extracted. Generic interview will proceed.";
+            log.warn("Resume {} has no extracted text, using fallback for user {}", resumeId, userId);
         }
 
         // ── Validate and fetch job role ──────────────────────────
         JobRole jobRole = jobRoleRepository.findById(jobRoleId)
                 .orElseThrow(() -> new RuntimeException("Job role not found: " + jobRoleId));
 
+        // Issue 8: Validate job role is active
+        if (!jobRole.isActive()) {
+            throw new RuntimeException("Job role is not available: " + jobRole.getTitle());
+        }
+
         // ── Create Interview entity ──────────────────────────────
-        // P1: Start in GENERATING_VIDEOS state (previously IN_PROGRESS)
+        // FIX: Start in IN_PROGRESS directly — skip GENERATING_VIDEOS since we removed D-ID and audio generation is fast
         Interview interview = new Interview();
         interview.setUser(user);
         interview.setResume(resume);
         interview.setJobRole(jobRole);
-        interview.setStatus(InterviewStatus.GENERATING_VIDEOS);
+        interview.setStatus(InterviewStatus.CREATED); // FIX: Start as CREATED, will transition to IN_PROGRESS after questions are saved
         interview.setType(InterviewType.VIDEO);
         interview = interviewRepository.save(interview);
 
-        log.info("Interview created with ID: {} (status=GENERATING_VIDEOS)", interview.getId());
+        log.info("Interview created with ID: {} (status=CREATED)", interview.getId());
 
         // P1-9: Reduced max from 20 to 10, default from 10 to 5 for API cost control.
-        // At 10 questions: 10 × TTS + 10 × D-ID ≈ $0.51 per interview.
-        // Combined with rate limiting (5 burst/min), this caps cost exposure.
         int finalNumQuestions = (numQuestions != null && numQuestions > 0 && numQuestions <= 10) ? numQuestions : 5;
 
-        // Step 8: Generate questions via Ollama
-        List<Question> questions = ollamaService.generateQuestionsWithResilience(resume, jobRole, finalNumQuestions);
+        // FIX: Wrap entire question generation + TTS in try-catch so errors are actionable
+        List<Question> questions;
+        try {
+            // Step 1: Generate questions via Ollama
+            questions = ollamaService.generateQuestionsWithResilience(resume, jobRole, finalNumQuestions);
+        } catch (ResourceAccessException e) {
+            // FIX: Ollama connection refused — give clear instructions to the user
+            log.error("Ollama is not reachable. Cannot generate questions for interview {}", interview.getId(), e);
+            interview.setStatus(InterviewStatus.FAILED); // FIX: Mark as failed so it doesn't stay stuck
+            interviewRepository.save(interview);
+            throw new RuntimeException("Question generation failed. Please ensure Ollama is running: run 'ollama serve' in terminal.");
+        } catch (Exception e) {
+            // FIX: Any other Ollama failure — give actionable error message
+            log.error("Question generation failed for interview {}: {}", interview.getId(), e.getMessage(), e);
+            interview.setStatus(InterviewStatus.FAILED); // FIX: Mark as failed
+            interviewRepository.save(interview);
+            throw new RuntimeException("Question generation failed. Please ensure Ollama is running: run 'ollama serve' in terminal.");
+        }
 
-        // Step 9: Save questions associated with interview
+        // Step 2: Save questions and generate TTS audio for each
         List<Long> questionIds = new ArrayList<>();
         for (int i = 0; i < questions.size(); i++) {
             Question question = questions.get(i);
-            question.setQuestionNumber(i + 1); // Using questionNumber for sequence
+            question.setQuestionNumber(i + 1);
             question.setInterview(interview);
-            question.setCategory("GENERAL"); // Ollama simple array prompt returns strings, default to GENERAL
-            question.setDifficulty("MEDIUM");
+            // FIX: Preserve category/difficulty from Ollama if set, otherwise default
+            if (question.getCategory() == null || question.getCategory().isBlank()) {
+                question.setCategory("GENERAL");
+            }
+            if (question.getDifficulty() == null || question.getDifficulty().isBlank()) {
+                question.setDifficulty("MEDIUM");
+            }
             question = questionRepository.save(question); // Save to get ID
+
+            // FIX: Generate TTS audio for each question — if TTS fails, log warning and continue (never fail the whole interview)
+            try {
+                String audioS3Key = textToSpeechService.generateSpeech(question.getQuestionText(), question.getId());
+                question.setAudioUrl(audioS3Key); // FIX: Store the audio S3 key on the question
+                questionRepository.save(question); // FIX: Persist the audio URL
+                log.info("TTS audio generated for question {} (interview {})", question.getId(), interview.getId());
+            } catch (Exception ttsEx) {
+                // FIX: TTS failure is non-fatal — question will display as text-only
+                log.warn("TTS generation failed for question {} — interview will continue without audio: {}",
+                        question.getId(), ttsEx.getMessage());
+                question.setAudioUrl(null); // FIX: Explicitly null so frontend knows to use text-only mode
+            }
 
             questionIds.add(question.getId());
         }
@@ -226,9 +279,12 @@ public class InterviewService {
 
         log.info("Saved {} questions for interview ID: {}", questions.size(), interview.getId());
 
+        // FIX: Transition directly to IN_PROGRESS — audio generation is fast, no need for GENERATING_VIDEOS state
+        interview.transitionTo(InterviewStatus.IN_PROGRESS); // FIX: Use transitionTo() for state machine enforcement (CREATED → IN_PROGRESS allowed after D-ID removal)
+        interviewRepository.save(interview);
+        log.info("Interview {} transitioned to IN_PROGRESS", interview.getId());
+
         // ── Publish event (dispatched after transaction commit) ──
-        // The AvatarPipelineListener will receive this event on a virtual
-        // thread and generate videos in the background.
         eventPublisher.publishEvent(new QuestionsCreatedEvent(this, interview.getId(), questionIds));
 
         log.info("QuestionsCreatedEvent published for interview ID: {} with {} question IDs",
@@ -374,13 +430,21 @@ public class InterviewService {
             throw new RuntimeException("Upload not found in S3. Please re-upload the video. S3 key: " + s3Key);
         }
 
+        // Issue 18: Validate video duration
+        Integer videoDuration = request.getVideoDuration();
+        int minDuration = 5;  // Minimum 5 seconds
+        int maxDuration = 300; // Maximum 5 minutes
+        if (videoDuration != null && (videoDuration < minDuration || videoDuration > maxDuration)) {
+            throw new RuntimeException("Video duration must be between " + minDuration + " and " + maxDuration + " seconds.");
+        }
+
         // Create Response entity with S3 key (not a presigned URL)
         Response response = new Response();
         response.setQuestion(question);
         response.setInterview(interview);
         response.setUser(interview.getUser());
         response.setVideoUrl(s3Key); // P1: stores S3 key, not presigned URL
-        response.setVideoDuration(request.getVideoDuration());
+        response.setVideoDuration(videoDuration);
         responseRepository.save(response);
 
         log.info("Response saved for question {}: s3Key={}", questionId, s3Key);
@@ -591,6 +655,46 @@ public class InterviewService {
     }
 
     // ════════════════════════════════════════════════════════════════
+    // 5b. Terminate Interview (Proctoring Disqualification)
+    // ════════════════════════════════════════════════════════════════
+
+    /**
+     * Terminate an interview due to proctoring violations.
+     *
+     * <p>Transitions the interview from {@code IN_PROGRESS} to
+     * {@code DISQUALIFIED}. Called when the frontend proctoring system
+     * detects that the candidate has exceeded the maximum number of
+     * allowed violations (tab switches, window blur, face not detected).</p>
+     *
+     * @param interviewId the interview to terminate
+     * @param userId      the authenticated user's ID (for ownership validation)
+     * @param reason      human-readable reason for termination
+     * @return a confirmation message
+     * @throws RuntimeException if interview not found, not owned by user,
+     *                          or not in IN_PROGRESS state
+     */
+    @Transactional
+    public String terminateInterview(Long interviewId, Long userId, String reason) { // FIX: New method for proctoring disqualification (Issue 3)
+        log.info("Terminating interview (proctoring) ID: {} for user: {}, reason: {}", interviewId, userId, reason);
+
+        Interview interview = interviewRepository.findByIdAndUserId(interviewId, userId) // FIX: Verify authenticated user owns this interview
+                .orElseThrow(() -> new RuntimeException(
+                        "Interview not found or does not belong to user: " + interviewId));
+
+        if (interview.getStatus() != InterviewStatus.IN_PROGRESS) { // FIX: Only IN_PROGRESS interviews can be terminated by proctoring
+            throw new RuntimeException("Interview is not in progress. Current status: " + interview.getStatus());
+        }
+
+        interview.transitionTo(InterviewStatus.DISQUALIFIED); // FIX: Use state machine enforcement for DISQUALIFIED transition
+        interview.setCompletedAt(LocalDateTime.now()); // FIX: Record termination timestamp
+        interviewRepository.save(interview);
+
+        log.info("Interview ID: {} terminated by proctoring system. Reason: {}", interviewId, reason); // FIX: Log proctoring termination for audit trail
+
+        return "Interview terminated by proctoring system: " + reason;
+    }
+
+    // ════════════════════════════════════════════════════════════════
     // 6. Interview History
     // ════════════════════════════════════════════════════════════════
 
@@ -602,7 +706,21 @@ public class InterviewService {
      */
     @Transactional(readOnly = true)
     public List<InterviewDTO> getInterviewHistory(Long userId) {
-        List<Interview> interviews = interviewRepository.findByUserId(userId);
+        return getInterviewHistory(userId, 0, 20);
+    }
+
+    /**
+     * Get paginated interview history for a user (Issue 3: Pagination).
+     *
+     * @param userId   the authenticated user's ID
+     * @param page     page number (0-indexed)
+     * @param size     page size
+     * @return paginated list of interview DTOs
+     */
+    @Transactional(readOnly = true)
+    public List<InterviewDTO> getInterviewHistory(Long userId, int page, int size) {
+        Page<Interview> interviews = interviewRepository.findByUserIdOrderByStartedAtDesc(
+                userId, org.springframework.data.domain.PageRequest.of(page, size));
 
         List<InterviewDTO> history = new ArrayList<>();
         for (Interview interview : interviews) {
@@ -614,12 +732,10 @@ public class InterviewService {
             dto.setStartedAt(interview.getStartedAt());
             dto.setCompletedAt(interview.getCompletedAt());
 
-            // Include job role title
             if (interview.getJobRole() != null) {
                 dto.setJobRoleTitle(interview.getJobRole().getTitle());
             }
 
-            // Don't load full questions for history list (performance)
             dto.setQuestions(null);
 
             history.add(dto);
@@ -634,6 +750,7 @@ public class InterviewService {
 
     /**
      * Delete an interview and all its associated data.
+     * Issue 12: Also deletes associated video files from storage.
      *
      * @param interviewId the interview to delete
      * @param userId      the authenticated user's ID
@@ -646,15 +763,27 @@ public class InterviewService {
                 .orElseThrow(() -> new RuntimeException(
                         "Interview not found or does not belong to user: " + interviewId));
 
+        // Issue 12: Delete video files from storage before deleting database records
+        List<Response> responses = responseRepository.findByInterviewId(interviewId);
+        for (Response response : responses) {
+            if (response.getVideoUrl() != null && !response.getVideoUrl().isBlank()) {
+                try {
+                    videoStorageService.deleteFile(response.getVideoUrl());
+                    log.debug("Deleted video file: {}", response.getVideoUrl());
+                } catch (Exception e) {
+                    log.warn("Failed to delete video file: {} - {}", response.getVideoUrl(), e.getMessage());
+                }
+            }
+        }
+
         // Delete responses explicitly first to prevent JPA cascade order constraint
         // violations
-        List<Response> responses = responseRepository.findByInterviewId(interviewId);
         responseRepository.deleteAll(responses);
 
         // Then let cascading deletes handle questions and feedback
         interviewRepository.delete(interview);
 
-        log.info("Successfully deleted interview ID: {}", interviewId);
+        log.info("Successfully deleted interview ID: {} with {} video files", interviewId, responses.size());
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -712,6 +841,7 @@ public class InterviewService {
 
             // P1: Resolve avatar video S3 key to presigned GET URL
             qDto.setAvatarVideoUrl(resolveToPresignedUrl(question.getAvatarVideoUrl()));
+            qDto.setAudioUrl(resolveToPresignedUrl(question.getAudioUrl())); // FIX: Map ElevenLabs TTS audio URL alongside avatar video URL
 
             // Check if response exists for this question
             Optional<Response> responseOpt = responseRepository.findByQuestionId(question.getId());

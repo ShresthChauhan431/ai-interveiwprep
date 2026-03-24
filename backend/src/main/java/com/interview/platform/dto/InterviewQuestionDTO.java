@@ -11,6 +11,7 @@ public class InterviewQuestionDTO {
     private String category;
     private String difficulty;
     private String avatarVideoUrl;
+    private String audioUrl; // FIX: ElevenLabs TTS audio URL replacing D-ID avatar video
     private boolean answered;
     private String responseVideoUrl;
     private String responseTranscription;
@@ -65,6 +66,14 @@ public class InterviewQuestionDTO {
 
     public void setAvatarVideoUrl(String avatarVideoUrl) {
         this.avatarVideoUrl = avatarVideoUrl;
+    }
+
+    public String getAudioUrl() { // FIX: Getter for ElevenLabs TTS audio URL
+        return audioUrl;
+    }
+
+    public void setAudioUrl(String audioUrl) { // FIX: Setter for ElevenLabs TTS audio URL
+        this.audioUrl = audioUrl;
     }
 
     public boolean isAnswered() {

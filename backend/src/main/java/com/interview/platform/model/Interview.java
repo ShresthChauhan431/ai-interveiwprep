@@ -87,12 +87,13 @@ public class Interview {
      * </pre>
      */
     private static final Map<InterviewStatus, Set<InterviewStatus>> VALID_TRANSITIONS = Map.of(
-            InterviewStatus.CREATED, Set.of(InterviewStatus.GENERATING_VIDEOS, InterviewStatus.FAILED),
+            InterviewStatus.CREATED, Set.of(InterviewStatus.GENERATING_VIDEOS, InterviewStatus.IN_PROGRESS, InterviewStatus.FAILED), // FIX: Allow CREATED → IN_PROGRESS since D-ID removed and TTS is synchronous (skip GENERATING_VIDEOS)
             InterviewStatus.GENERATING_VIDEOS, Set.of(InterviewStatus.IN_PROGRESS, InterviewStatus.FAILED),
-            InterviewStatus.IN_PROGRESS, Set.of(InterviewStatus.PROCESSING, InterviewStatus.FAILED),
+            InterviewStatus.IN_PROGRESS, Set.of(InterviewStatus.PROCESSING, InterviewStatus.FAILED, InterviewStatus.DISQUALIFIED), // FIX: Allow IN_PROGRESS → DISQUALIFIED for proctoring termination (Issue 3)
             InterviewStatus.PROCESSING, Set.of(InterviewStatus.COMPLETED, InterviewStatus.FAILED),
             InterviewStatus.COMPLETED, Set.of(),
-            InterviewStatus.FAILED, Set.of()
+            InterviewStatus.FAILED, Set.of(),
+            InterviewStatus.DISQUALIFIED, Set.of() // FIX: DISQUALIFIED is a terminal state — no further transitions allowed (Issue 3)
     );
 
     @PrePersist

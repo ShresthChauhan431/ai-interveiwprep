@@ -5,8 +5,9 @@ import com.interview.platform.model.InterviewStatus;
 import com.interview.platform.model.Question;
 import com.interview.platform.repository.InterviewRepository;
 import com.interview.platform.repository.QuestionRepository;
-import com.interview.platform.service.CachedAvatarService;
+// FIX: Removed unused CachedAvatarService import — D-ID avatar pipeline fully replaced by ElevenLabs TTS
 import com.interview.platform.service.SseEmitterService;
+import com.interview.platform.service.TextToSpeechService; // FIX: Import TTS service for ElevenLabs audio generation (replaces D-ID video)
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Async;
@@ -62,7 +63,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * </p>
  *
  * <h3>State Machine:</h3>
- * 
+ *
  * <pre>
  *   GENERATING_VIDEOS ──► IN_PROGRESS  (all videos ready or best-effort)
  *   GENERATING_VIDEOS ──► FAILED       (only on catastrophic error like interview not found)
@@ -97,17 +98,18 @@ public class AvatarPipelineListener {
 
     private final QuestionRepository questionRepository;
     private final InterviewRepository interviewRepository;
-    private final CachedAvatarService cachedAvatarService;
     private final SseEmitterService sseEmitterService;
+    private final TextToSpeechService textToSpeechService; // FIX: TTS service replaces D-ID CachedAvatarService entirely
 
+    // FIX: Removed CachedAvatarService from constructor — D-ID avatar pipeline fully replaced by ElevenLabs TTS
     public AvatarPipelineListener(QuestionRepository questionRepository,
             InterviewRepository interviewRepository,
-            CachedAvatarService cachedAvatarService,
-            SseEmitterService sseEmitterService) {
+            SseEmitterService sseEmitterService,
+            TextToSpeechService textToSpeechService) {
         this.questionRepository = questionRepository;
         this.interviewRepository = interviewRepository;
-        this.cachedAvatarService = cachedAvatarService;
         this.sseEmitterService = sseEmitterService;
+        this.textToSpeechService = textToSpeechService;
     }
 
     /**
@@ -149,9 +151,10 @@ public class AvatarPipelineListener {
                 successCount.incrementAndGet();
 
                 // Push SSE event: avatar video ready
+                // FIX: Send audioUrl in SSE event instead of videoUrl for TTS audio readiness
                 sseEmitterService.send(interviewId, "avatar-ready", Map.of(
                         "questionId", questionId,
-                        "videosReady", successCount.get(),
+                        "audiosReady", successCount.get(), // FIX: Renamed from videosReady to audiosReady
                         "totalQuestions", questionIds.size()));
             } catch (Exception e) {
                 failCount.incrementAndGet();
@@ -198,25 +201,27 @@ public class AvatarPipelineListener {
                 .orElseThrow(() -> new RuntimeException(
                         "Question not found during avatar pipeline: " + questionId));
 
-        // Skip if avatar video already exists (idempotency guard)
-        if (question.getAvatarVideoUrl() != null && !question.getAvatarVideoUrl().isBlank()) {
-            log.debug("Question {} already has avatar video, skipping: {}",
-                    questionId, question.getAvatarVideoUrl());
+        // FIX: Skip if audio already exists (idempotency guard — changed from avatarVideoUrl to audioUrl)
+        if (question.getAudioUrl() != null && !question.getAudioUrl().isBlank()) {
+            log.debug("Question {} already has TTS audio, skipping: {}", // FIX: Updated log message for TTS audio
+                    questionId, question.getAudioUrl());
             return;
         }
 
         String questionText = question.getQuestionText();
-        log.debug("Generating avatar for question {}: text='{}'",
+        log.debug("Generating TTS audio for question {}: text='{}'", // FIX: Updated log message from "avatar" to "TTS audio"
                 questionId, truncateForLog(questionText, 80));
 
-        // CachedAvatarService handles cache lookup + generation
-        String avatarS3Key = cachedAvatarService.getOrGenerateAvatar(questionText, questionId);
+        // FIX: Replaced D-ID avatar video generation with ElevenLabs TTS audio
+        // String avatarS3Key = cachedAvatarService.getOrGenerateAvatar(questionText, questionId);
+        // question.setAvatarVideoUrl(avatarS3Key);
+        String audioUrl = textToSpeechService.generateAndSaveAudio( // FIX: Call TTS service instead of CachedAvatarService
+                question.getQuestionText(), question.getId());
+        question.setAudioUrl(audioUrl); // FIX: Set audioUrl instead of avatarVideoUrl
 
-        // Persist the S3 key to the question entity
-        question.setAvatarVideoUrl(avatarS3Key);
         questionRepository.save(question);
 
-        log.info("Avatar video set for question {}: s3Key={}", questionId, avatarS3Key);
+        log.info("TTS audio set for question {}: audioUrl={}", questionId, audioUrl); // FIX: Updated log message for TTS audio
     }
 
     /**
