@@ -248,13 +248,21 @@ public class SpeechToTextService {
      * @return the transcription text if available, or null
      */
     public String getTranscriptionResult(String videoUrlOrKey) {
-        // This is a best-effort method. The transcribeVideoAsync() method
-        // already persists transcription results to the Response entity
-        // when AssemblyAI completes processing. This method exists only
-        // as a synchronous fallback check at interview completion time.
-        // Since transcribeVideoAsync already handles persistence, we can
-        // simply return null here - the transcription will already be in
-        // the database if AssemblyAI finished processing it.
+        // videoUrlOrKey is the S3 key stored in Response.videoUrl
+        // Find the Response by its video URL (S3 key)
+        // and return its transcription if available
+        try {
+            Optional<Response> responseOpt =
+                    responseRepository.findByVideoUrl(videoUrlOrKey);
+            if (responseOpt.isPresent()) {
+                String transcription = responseOpt.get().getTranscription();
+                return (transcription != null && !transcription.isBlank())
+                        ? transcription : null;
+            }
+        } catch (Exception e) {
+            log.warn("getTranscriptionResult failed for videoUrl {}: {}",
+                    videoUrlOrKey, e.getMessage());
+        }
         return null;
     }
 

@@ -39,6 +39,8 @@ interface UseHybridInterviewReturn {
   currentQuestionIndex: number;
   /** True when uploading video or generating next question */
   isTransitioning: boolean;
+  /** True when waiting for transcription to complete */
+  isTranscribing: boolean;
   /** How the current question was generated */
   generationMode: "PRE_GENERATED" | "DYNAMIC" | null;
   /** True if this is the last question */
@@ -88,6 +90,7 @@ export const useHybridInterview = ({
 
   // ── Local State ─────────────────────────────────────────────
   const [isTransitioning, setIsTransitioning] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
   const [transitionError, setTransitionError] = useState<string | null>(null);
   const [generationMode, setGenerationMode] = useState<
     "PRE_GENERATED" | "DYNAMIC" | null
@@ -129,6 +132,41 @@ export const useHybridInterview = ({
       }
     },
     [questions, setCurrentQuestionIndex, setRecordingState],
+  );
+
+  // ── Poll for Transcription ──────────────────────────────────
+  const pollForTranscription = useCallback(
+    async (
+      questionId: number,
+      maxWaitMs = 30000,
+      intervalMs = 2000,
+    ): Promise<string> => {
+      const deadline = Date.now() + maxWaitMs;
+      while (Date.now() < deadline) {
+        try {
+          const result = await interviewService.getTranscriptionStatus(
+            interviewId,
+            questionId,
+          );
+          if (result.status === "COMPLETED" && result.transcription) {
+            return result.transcription;
+          }
+        } catch (err) {
+          // Network error — keep trying until deadline
+          console.warn("Transcription poll error (retrying):", err);
+        }
+        // Wait before next poll
+        await new Promise((resolve) => setTimeout(resolve, intervalMs));
+      }
+      // Timeout — return empty string (graceful degradation)
+      console.warn(
+        "Transcription polling timed out for question",
+        questionId,
+        "— proceeding without transcript",
+      );
+      return "";
+    },
+    [interviewId],
   );
 
   // ── Advance to Next Question ────────────────────────────────
@@ -178,12 +216,19 @@ export const useHybridInterview = ({
           }
         }
 
-        // Step 2: Submit answer and get next question (hybrid flow)
+        // Step 1b: Wait for AssemblyAI to transcribe the uploaded video
+        setIsTranscribing(true);
+        const transcript = await pollForTranscription(
+          currentQuestion.questionId,
+        );
+        setIsTranscribing(false);
+
+        // Step 2: Submit answer with real transcript and get next question (hybrid flow)
         const response: NextQuestionResponse =
           await interviewService.submitAnswerAndGetNext(
             interviewId,
             currentQuestion.questionId,
-            answerTranscript,
+            transcript,
             videoUrl,
           );
 
@@ -272,6 +317,7 @@ export const useHybridInterview = ({
         return false;
       } finally {
         setIsTransitioning(false);
+        setIsTranscribing(false);
       }
     },
     [
@@ -284,6 +330,7 @@ export const useHybridInterview = ({
       setRecordingState,
       onError,
       onComplete,
+      pollForTranscription,
     ],
   );
 
@@ -291,6 +338,7 @@ export const useHybridInterview = ({
     currentQuestion,
     currentQuestionIndex,
     isTransitioning,
+    isTranscribing,
     generationMode,
     isLastQuestion,
     totalQuestions,

@@ -93,6 +93,7 @@ const InterviewRoom: React.FC<InterviewRoomProps> = ({
   // HYBRID: Use the hybrid interview hook for dynamic question generation
   const {
     isTransitioning: isHybridTransitioning,
+    isTranscribing,
     generationMode,
     transitionError: hybridError,
     clearTransitionError: clearHybridError,
@@ -611,6 +612,17 @@ const InterviewRoom: React.FC<InterviewRoomProps> = ({
         </Box>
       )}
 
+      {/* Transcription loading overlay */}
+      {isTranscribing && !isCompleting && !isHybridTransitioning && (
+        <Box sx={{ textAlign: "center", py: 6 }}>
+          <CircularProgress size={48} sx={{ mb: 2 }} color="primary" />
+          <Typography variant="h6">Transcribing your answer...</Typography>
+          <Typography color="text.secondary">
+            Converting your response to text for AI analysis.
+          </Typography>
+        </Box>
+      )}
+
       {/* ── Main interview layout ── */}
       {!isCompleting && !isHybridTransitioning && currentQuestion && (
         <Box
@@ -766,7 +778,7 @@ const InterviewRoom: React.FC<InterviewRoomProps> = ({
         >
           <Button
             variant="outlined"
-            disabled={currentQuestionIndex === 0 || isUploading || isTerminated || isHybridTransitioning} // FIX: Disable navigation when terminated (Issue 3); HYBRID: Also disable during question generation
+            disabled={currentQuestionIndex === 0 || isUploading || isTerminated || isHybridTransitioning || isTranscribing} // FIX: Disable navigation when terminated (Issue 3); HYBRID: Also disable during question generation; Disable during transcription
             onClick={() => {
               // FIX: Only allow going back if previous question was already answered — read-only review mode (Issue 2)
               const prevIndex = currentQuestionIndex - 1;
@@ -795,7 +807,7 @@ const InterviewRoom: React.FC<InterviewRoomProps> = ({
               variant="contained"
               color="success"
               onClick={handleComplete}
-              disabled={isUploading || isCompleting || isTerminated || isHybridTransitioning} // FIX: Disable finish when terminated by proctoring (Issue 3); HYBRID: Also disable during question generation
+              disabled={isUploading || isCompleting || isTerminated || isHybridTransitioning || isTranscribing} // FIX: Disable finish when terminated by proctoring (Issue 3); HYBRID: Also disable during question generation; Disable during transcription
               sx={{ borderRadius: 2 }}
             >
               Finish Interview
@@ -807,7 +819,7 @@ const InterviewRoom: React.FC<InterviewRoomProps> = ({
             <Button
               variant="text"
               color="inherit"
-              disabled={isUploading || isTerminated || isHybridTransitioning} // FIX: Disable navigation when terminated by proctoring (Issue 3); HYBRID: Also disable during question generation
+              disabled={isUploading || isTerminated || isHybridTransitioning || isTranscribing} // FIX: Disable navigation when terminated by proctoring (Issue 3); HYBRID: Also disable during question generation; Disable during transcription
               onClick={() => {
                 setCurrentQuestionIndex(currentQuestionIndex + 1);
                 setRecordingState(false);

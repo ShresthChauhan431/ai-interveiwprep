@@ -17,4 +17,6 @@ public interface ResponseRepository extends JpaRepository<Response, Long> {
     List<Response> findByInterviewIdOrderByQuestionId(Long interviewId);
 
     Optional<Response> findByQuestionId(Long questionId);
+
+    Optional<Response> findByVideoUrl(String videoUrl);
 }

@@ -566,6 +566,35 @@ export const interviewService = {
   },
 
   // ════════════════════════════════════════════════════════════════
+  // 9b. Get Transcription Status
+  // ════════════════════════════════════════════════════════════════
+
+  /**
+   * Get the transcription status for a submitted answer.
+   * Polls this endpoint to wait for AssemblyAI to complete transcription.
+   * GET /api/interviews/{interviewId}/questions/{questionId}/transcription
+   */
+  async getTranscriptionStatus(
+    interviewId: number,
+    questionId: number,
+  ): Promise<{
+    status: "PENDING" | "COMPLETED";
+    transcription: string | null;
+    confidence: number | null;
+  }> {
+    try {
+      const response = await api.get(
+        `/api/interviews/${interviewId}/questions/${questionId}/transcription`,
+      );
+      return response.data;
+    } catch (error: any) {
+      throw error?.message
+        ? error
+        : new Error("Failed to get transcription status.");
+    }
+  },
+
+  // ════════════════════════════════════════════════════════════════
   // 10. Delete Interview
   // ════════════════════════════════════════════════════════════════
 

@@ -401,6 +401,65 @@ public class InterviewController {
     }
 
     // ════════════════════════════════════════════════════════════════
+    // 6d. GET /api/interviews/{interviewId}/questions/{questionId}/transcription
+    // ════════════════════════════════════════════════════════════════
+
+    /**
+     * Get the transcription status for a submitted answer.
+     *
+     * <p>This endpoint allows the frontend to poll for the completion of
+     * AssemblyAI transcription after confirm-upload. Returns PENDING if
+     * transcription is not yet available, COMPLETED with the transcription
+     * text if AssemblyAI has finished processing.</p>
+     *
+     * @param interviewId the interview ID
+     * @param questionId  the question ID
+     * @param httpRequest the HTTP request (for user ID extraction)
+     * @return Map with status, transcription, and confidence
+     */
+    @GetMapping("/{interviewId}/questions/{questionId}/transcription")
+    public ResponseEntity<Map<String, Object>> getTranscriptionStatus(
+            @PathVariable Long interviewId,
+            @PathVariable Long questionId,
+            HttpServletRequest httpRequest) {
+
+        Long userId = getUserIdFromRequest(httpRequest);
+
+        // Verify ownership
+        interviewRepository.findByIdAndUserId(interviewId, userId)
+                .orElseThrow(() -> new RuntimeException(
+                        "Interview not found or access denied: " + interviewId));
+
+        // Load the response for this question
+        Optional<Response> responseOpt =
+                responseRepository.findByQuestionId(questionId);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+
+        if (responseOpt.isEmpty()) {
+            result.put("status", "PENDING");
+            result.put("transcription", null);
+            result.put("confidence", null);
+            return ResponseEntity.ok(result);
+        }
+
+        Response response = responseOpt.get();
+        String transcription = response.getTranscription();
+
+        if (transcription == null || transcription.isBlank()) {
+            result.put("status", "PENDING");
+            result.put("transcription", null);
+            result.put("confidence", null);
+        } else {
+            result.put("status", "COMPLETED");
+            result.put("transcription", transcription);
+            result.put("confidence", response.getTranscriptionConfidence());
+        }
+
+        return ResponseEntity.ok(result);
+    }
+
+    // ════════════════════════════════════════════════════════════════
     // 7. GET /api/interviews/history
     // ════════════════════════════════════════════════════════════════
 
