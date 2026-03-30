@@ -91,7 +91,50 @@ else
 fi
 
 # ═══════════════════════════════════════════════════════════════
-# 2. Start Backend
+# 2. Check Database Connectivity
+# ═══════════════════════════════════════════════════════════════
+
+print_info "Ensuring MySQL is running on port 3306..."
+if ! nc -z localhost 3306 >/dev/null 2>&1; then
+    print_info "Port 3306 is closed. Attempting to start via Docker Compose..."
+    if ! docker info >/dev/null 2>&1; then
+        print_info "Docker is not running. Opening Docker Desktop..."
+        open -a Docker || true
+        print_info "Waiting for Docker daemon to initialize (this may take up to 60s)..."
+        for i in {1..30}; do
+            if docker info >/dev/null 2>&1; then
+                print_success "Docker daemon is ready"
+                break
+            fi
+            sleep 2
+        done
+        if ! docker info >/dev/null 2>&1; then
+             print_error "Docker failed to start within 60s. Please start Docker manually."
+             exit 1
+        fi
+    fi
+    
+    # Try starting the database container
+    docker-compose up -d mysql >/dev/null 2>&1 || { print_error "Failed to start MySQL via Docker Compose. Check docker-compose.yml"; exit 1; }
+    
+    print_info "Waiting for MySQL container to accept connections..."
+    for i in {1..30}; do
+        if nc -z localhost 3306 >/dev/null 2>&1; then
+            print_success "MySQL is running via Docker"
+            break
+        fi
+        if [ "$i" -eq 30 ]; then
+             print_error "MySQL container failed to bind to port 3306 in time."
+             exit 1
+        fi
+        sleep 1
+    done
+else
+    print_success "MySQL is already running on port 3306"
+fi
+
+# ═══════════════════════════════════════════════════════════════
+# 3. Start Backend
 # ═══════════════════════════════════════════════════════════════
 
 print_info "Starting Backend (Spring Boot)..."

@@ -35,6 +35,21 @@ public class Question {
     @Column(name = "audio_url") // FIX: ElevenLabs TTS audio URL field replacing D-ID avatar video generation
     private String audioUrl;
 
+    /**
+     * How this question was generated:
+     * - "PRE_GENERATED": Generated before interview started (in the pre-gen zone)
+     * - "DYNAMIC": Generated dynamically during the interview based on previous answers
+     */
+    @Column(name = "generation_mode", length = 20)
+    private String generationMode;
+
+    /**
+     * For dynamically generated questions, the ID of the question whose answer triggered this generation.
+     * Null for pre-generated questions.
+     */
+    @Column(name = "generated_after_question_id")
+    private Long generatedAfterQuestionId;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
@@ -129,5 +144,21 @@ public class Question {
 
     public void setCreatedAt(LocalDateTime createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public String getGenerationMode() {
+        return generationMode;
+    }
+
+    public void setGenerationMode(String generationMode) {
+        this.generationMode = generationMode;
+    }
+
+    public Long getGeneratedAfterQuestionId() {
+        return generatedAfterQuestionId;
+    }
+
+    public void setGeneratedAfterQuestionId(Long generatedAfterQuestionId) {
+        this.generatedAfterQuestionId = generatedAfterQuestionId;
     }
 }

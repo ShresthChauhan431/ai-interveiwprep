@@ -159,6 +159,14 @@ public class TextToSpeechService {
      */
     @Cacheable(value = "ttsAudio", key = "#root.target.computeCacheKey(#text)")
     public String generateSpeech(String text, Long questionId) {
+        // FIX: Detect missing/invalid API keys early to avoid 401 errors
+        if (apiKey == null || apiKey.isBlank() || apiKey.equals("your-api-key-here")
+                || apiKey.equals("${ELEVENLABS_API_KEY}")) {
+            log.warn("ElevenLabs API key is missing or placeholder — skipping TTS for question {}. "
+                    + "Set ELEVENLABS_API_KEY in .env to enable speech generation.", questionId);
+            return null;
+        }
+
         String cacheKey = computeCacheKey(text);
 
         // ── Level 2: Check Database Cache ────────────────────────
@@ -176,11 +184,18 @@ public class TextToSpeechService {
         byte[] audioData;
 
         // --- MOCK API FALLBACK ---
-        if (apiKey != null && apiKey.startsWith("mock")) {
+        if (apiKey.startsWith("mock")) {
             log.info("Mock ElevenLabs API key detected. Returning empty byte array.");
             audioData = new byte[] { 0 }; // tiny dummy payload
         } else {
-            audioData = callElevenLabsWithResilience(text);
+            try {
+                audioData = callElevenLabsWithResilience(text);
+            } catch (Exception e) {
+                // FIX: Catch 401/403 auth errors and log clearly instead of crashing
+                log.warn("ElevenLabs TTS call FAILED for question {} — interview will proceed "
+                        + "with text-only mode. Error: {}", questionId, e.getMessage());
+                return null;
+            }
         }
         // -------------------------
 
@@ -242,6 +257,12 @@ public class TextToSpeechService {
      * @return the storage key (e.g., {@code audio/question_42.mp3}) or null on failure
      */
     public String generateAndSaveAudio(String text, Long questionId) { // FIX: New method — saves TTS audio to local disk for direct serving (replaces D-ID video pipeline)
+        // FIX: Detect missing/invalid API keys early
+        if (apiKey == null || apiKey.isBlank() || apiKey.equals("your-api-key-here")
+                || apiKey.equals("${ELEVENLABS_API_KEY}")) {
+            log.warn("ElevenLabs API key is missing or placeholder — skipping audio generation for question {}.", questionId);
+            return null;
+        }
         try {
             // Reuse the existing S3-based generation which handles caching, resilience, etc.
             // Then read the bytes back from local storage and write to the audio/ directory

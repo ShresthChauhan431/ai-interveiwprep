@@ -27,7 +27,13 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+
 import static org.assertj.core.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
@@ -774,7 +780,9 @@ class InterviewServiceTest {
                 @Test
                 @DisplayName("Should return list of interview DTOs for user")
                 void testGetInterviewHistory_Success() {
-                        when(interviewRepository.findByUserId(1L)).thenReturn(List.of(testInterview));
+                        Page<Interview> mockPage = new PageImpl<>(List.of(testInterview));
+                        when(interviewRepository.findByUserIdOrderByStartedAtDesc(eq(1L), any(PageRequest.class)))
+                                .thenReturn(mockPage);
 
                         List<InterviewDTO> history = interviewService.getInterviewHistory(1L);
 
@@ -788,7 +796,9 @@ class InterviewServiceTest {
                 @Test
                 @DisplayName("Should return empty list when user has no interviews")
                 void testGetInterviewHistory_Empty() {
-                        when(interviewRepository.findByUserId(1L)).thenReturn(Collections.emptyList());
+                        Page<Interview> mockPage = new PageImpl<>(Collections.emptyList());
+                        when(interviewRepository.findByUserIdOrderByStartedAtDesc(eq(1L), any(PageRequest.class)))
+                                .thenReturn(mockPage);
 
                         List<InterviewDTO> history = interviewService.getInterviewHistory(1L);
 

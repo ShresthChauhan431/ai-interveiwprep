@@ -33,10 +33,9 @@ import { InterviewDTO } from "../../types";
 import { useAuth } from "../../hooks/useAuth";
 import { interviewService } from "../../services/interview.service";
 import { videoService } from "../../services/video.service";
+import ResumeAnalyzer from "./ResumeAnalyzer";
 
-// Cast Grid to any to suppress "xs" prop errors while using standard Grid v1
-// as per user instructions to avoid "item" prop but use { Grid }.
-const GridAny = Grid as any;
+const GridAny = Grid;
 
 // ============================================================
 // Status color/label helpers
@@ -201,7 +200,7 @@ const Dashboard: React.FC = () => {
         <Skeleton variant="text" width={200} height={24} sx={{ mb: 3 }} />
         <GridAny container spacing={3} sx={{ mb: 4 }}>
           {[1, 2, 3].map((i) => (
-            <GridAny xs={12} sm={4} key={i}>
+            <GridAny size={{ xs: 12, sm: 4 }} key={i}>
               <Skeleton
                 variant="rounded"
                 height={120}
@@ -246,7 +245,7 @@ const Dashboard: React.FC = () => {
 
       {/* ===== Quick Stats ===== */}
       <GridAny container spacing={3} sx={{ mb: 4 }}>
-        <GridAny xs={12} sm={4}>
+        <GridAny size={{ xs: 12, sm: 4 }}>
           <Card
             elevation={0}
             sx={{
@@ -280,7 +279,7 @@ const Dashboard: React.FC = () => {
           </Card>
         </GridAny>
 
-        <GridAny xs={12} sm={4}>
+        <GridAny size={{ xs: 12, sm: 4 }}>
           <Card
             elevation={0}
             sx={{
@@ -318,7 +317,7 @@ const Dashboard: React.FC = () => {
           </Card>
         </GridAny>
 
-        <GridAny xs={12} sm={4}>
+        <GridAny size={{ xs: 12, sm: 4 }}>
           <Card
             elevation={0}
             sx={{
@@ -356,7 +355,7 @@ const Dashboard: React.FC = () => {
       {/* ===== Action Row: Resume + Start ===== */}
       <GridAny container spacing={3} sx={{ mb: 4 }}>
         {/* Resume Card */}
-        <GridAny xs={12} sm={6}>
+        <GridAny size={{ xs: 12, sm: 6 }}>
           <Card
             elevation={0}
             sx={{
@@ -423,7 +422,7 @@ const Dashboard: React.FC = () => {
         </GridAny>
 
         {/* Start Interview Card */}
-        <GridAny xs={12} sm={4}>
+        <GridAny size={{ xs: 12, sm: 4 }}>
           <Card
             elevation={0}
             sx={{
@@ -456,7 +455,7 @@ const Dashboard: React.FC = () => {
           </Card>
         </GridAny>
         {/* Practice Communication Card */}
-        <GridAny xs={12} sm={4}>
+        <GridAny size={{ xs: 12, sm: 4 }}>
           <Card
             elevation={0}
             sx={{
@@ -486,6 +485,16 @@ const Dashboard: React.FC = () => {
               </Box>
             </CardContent>
           </Card>
+        </GridAny>
+      </GridAny>
+
+      {/* ===== Resume Analyzer Section ===== */}
+      <Typography variant="h6" fontWeight={600} sx={{ mb: 2, mt: 4 }}>
+        Resume Tools
+      </Typography>
+      <GridAny container spacing={3} sx={{ mb: 4 }}>
+        <GridAny size={{ xs: 12, md: 6 }}>
+          <ResumeAnalyzer />
         </GridAny>
       </GridAny>
 

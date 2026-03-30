@@ -6,9 +6,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
+import java.security.SecureRandom;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Manages Server-Sent Event (SSE) connections for real-time interview
@@ -79,6 +83,30 @@ public class SseEmitterService {
 
     /** Default SSE connection timeout: 10 minutes. */
     private static final long SSE_TIMEOUT_MS = 600_000L;
+
+    /** Ticket expiration time: 30 seconds. */
+    private static final long TICKET_EXPIRY_MS = 30_000L;
+
+    /** Stores valid tickets: ticket → {interviewId, userId, expiryTime}. */
+    private final ConcurrentMap<String, TicketData> tickets = new ConcurrentHashMap<>();
+
+    /** Secure random for ticket generation. */
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+
+    /**
+     * Internal class to hold ticket data.
+     */
+    private static class TicketData {
+        final Long interviewId;
+        final Long userId;
+        final long expiresAt;
+
+        TicketData(Long interviewId, Long userId, long expiresAt) {
+            this.interviewId = interviewId;
+            this.userId = userId;
+            this.expiresAt = expiresAt;
+        }
+    }
 
     /**
      * Map of composite key (interviewId:userId) → list of active SSE emitters.
@@ -263,5 +291,65 @@ public class SseEmitterService {
                 }
             }
         }
+    }
+
+    /**
+     * Generate a short-lived, single-use ticket for SSE connection.
+     *
+     * @param interviewId the interview to connect to
+     * @param userId      the authenticated user's ID
+     * @return a secure random ticket string
+     */
+    public String generateTicket(Long interviewId, Long userId) {
+        String ticket = generateSecureToken();
+        tickets.put(ticket, new TicketData(interviewId, userId, System.currentTimeMillis() + TICKET_EXPIRY_MS));
+        
+        log.debug("Generated SSE ticket for interviewId={}, userId={}", interviewId, userId);
+        
+        scheduleTicketCleanup(ticket);
+        return ticket;
+    }
+
+    /**
+     * Validate and consume a ticket. Returns the associated interviewId and userId if valid.
+     *
+     * @param ticket the ticket to validate
+     * @return an array of [interviewId, userId] if valid, or null if invalid/expired
+     */
+    public Long[] validateAndConsumeTicket(String ticket) {
+        TicketData data = tickets.remove(ticket);
+        if (data == null) {
+            log.warn("SSE ticket not found or already used: {}", ticket);
+            return null;
+        }
+        
+        if (System.currentTimeMillis() > data.expiresAt) {
+            log.warn("SSE ticket expired: {}", ticket);
+            return null;
+        }
+        
+        log.debug("SSE ticket validated: interviewId={}, userId={}", data.interviewId, data.userId);
+        return new Long[] { data.interviewId, data.userId };
+    }
+
+    private String generateSecureToken() {
+        byte[] bytes = new byte[32];
+        SECURE_RANDOM.nextBytes(bytes);
+        StringBuilder sb = new StringBuilder();
+        for (byte b : bytes) {
+            sb.append(String.format("%02x", b));
+        }
+        return sb.toString();
+    }
+
+    private void scheduleTicketCleanup(String ticket) {
+        Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "sse-ticket-cleanup");
+            t.setDaemon(true);
+            return t;
+        }).schedule(() -> {
+            tickets.remove(ticket);
+            log.debug("SSE ticket expired and removed: {}", ticket);
+        }, TICKET_EXPIRY_MS, TimeUnit.MILLISECONDS);
     }
 }

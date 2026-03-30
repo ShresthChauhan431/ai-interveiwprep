@@ -49,7 +49,10 @@ ollama serve
 
 ### 2. Setup MySQL Database
 
-#### Create Database:
+**Note:** If using Docker Compose (recommended), ensure Docker Desktop is running, then use `docker-compose up -d`.
+
+Alternatively, manually create the database natively:
+
 ```bash
 mysql -u root -p
 ```
@@ -140,7 +143,7 @@ Open a **new terminal**:
 ```bash
 
 cd frontend
-npm install //if not works then npm install --legacy-peer-deps
+npm install --legacy-peer-deps
 
 npm start
 ```
@@ -190,15 +193,15 @@ Expected: JSON response with `llama3` model listed
 - Select number of questions (5-10 recommended for testing)
 - Click "Start Interview"
 
-### 4. Wait for Avatar Generation:
+### 4. Wait for Audio/Avatar Generation:
 - You'll see a progress bar
-- This takes 30-60 seconds per question
+- This step generates the ElevenLabs TTS audio (and optional D-ID avatar videos)
 - Status will change from "GENERATING_VIDEOS" → "IN_PROGRESS"
 
 ### 5. Answer Questions:
 - Click "Begin Interview"
 - Allow camera/microphone access
-- Watch the AI avatar ask the question
+- Listen to the AI voice (and watch avatar if enabled)
 - Record your video response (up to 3 minutes)
 - Submit and move to next question
 

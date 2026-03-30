@@ -27,7 +27,7 @@ public class Response {
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
-    @Column(name = "video_url", nullable = false)
+    @Column(name = "video_url")
     private String videoUrl;
 
     @Lob

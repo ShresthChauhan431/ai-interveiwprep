@@ -171,6 +171,52 @@ export interface ConfirmUploadResponse {
 }
 
 // ============================================================
+// Hybrid Interview Types (Dynamic Question Generation)
+// ============================================================
+
+/**
+ * Response from POST /api/interviews/{interviewId}/questions/{questionId}/answer.
+ *
+ * In hybrid interview mode, this response contains the next question
+ * (either pre-generated or dynamically generated) or indicates that
+ * the interview is complete.
+ */
+export interface NextQuestionResponse {
+  /** ID of the next question, or null if interview is complete */
+  nextQuestionId: number | null;
+  /** Text of the next question */
+  nextQuestionText: string | null;
+  /** 1-based question number */
+  nextQuestionNumber: number | null;
+  /** URL to TTS audio for the next question */
+  nextQuestionAudioUrl: string | null;
+  /** Question category (TECHNICAL, BEHAVIORAL, GENERAL) */
+  nextQuestionCategory: string | null;
+  /** Question difficulty (EASY, MEDIUM, HARD) */
+  nextQuestionDifficulty: string | null;
+  /** How the question was generated: PRE_GENERATED or DYNAMIC */
+  generationMode: "PRE_GENERATED" | "DYNAMIC" | null;
+  /** Total number of questions in the interview */
+  totalQuestions: number;
+  /** True if this was the last question and interview is now complete */
+  interviewComplete: boolean;
+  /** Optional message (e.g., "Interview complete! Generating feedback...") */
+  message?: string;
+}
+
+/**
+ * Request body for POST /api/interviews/{interviewId}/questions/{questionId}/answer.
+ */
+export interface AnswerSubmissionRequest {
+  /** Transcribed text of the user's spoken answer */
+  answerTranscript: string;
+  /** Optional URL to the recorded video */
+  answerVideoUrl?: string;
+  /** Optional duration of the answer in seconds */
+  durationSeconds?: number;
+}
+
+// ============================================================
 // Interview DTO (matches backend InterviewDTO)
 // ============================================================
 
@@ -204,6 +250,13 @@ export interface Feedback {
   weaknesses: string[];
   recommendations: string[];
   detailedAnalysis: string;
+  questionAnswers?: QuestionAnswer[];
+}
+
+export interface QuestionAnswer {
+  questionText: string;
+  userAnswer: string;
+  idealAnswer?: string;
 }
 
 export interface InterviewFeedback {
@@ -227,6 +280,15 @@ export interface Resume {
   fileUrl: string;
   extractedText: string;
   uploadedAt: string;
+}
+
+export interface ResumeAnalysis {
+  score: number;
+  strengths: string[];
+  weaknesses: string[];
+  suggestions: string[];
+  overallFeedback: string;
+  resumeFileName: string;
 }
 
 // ============================================================

@@ -1,5 +1,6 @@
 package com.interview.platform.service;
 
+import com.interview.platform.config.InterviewConfig;
 import com.interview.platform.dto.*;
 import com.interview.platform.event.QuestionsCreatedEvent;
 import com.interview.platform.model.*;
@@ -8,6 +9,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -17,6 +19,7 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 import org.springframework.web.client.ResourceAccessException; // FIX: Import for catching Ollama connection errors
 
 /**
@@ -102,6 +105,7 @@ public class InterviewService {
     private final AIFeedbackService aiFeedbackService;
     private final TextToSpeechService textToSpeechService; // FIX: Added TTS service for generating audio per question
     private final ApplicationEventPublisher eventPublisher;
+    private final InterviewConfig interviewConfig; // Hybrid interview configuration
 
     public InterviewService(InterviewRepository interviewRepository,
             ResumeRepository resumeRepository,
@@ -114,7 +118,8 @@ public class InterviewService {
             SpeechToTextService speechToTextService,
             AIFeedbackService aiFeedbackService,
             TextToSpeechService textToSpeechService, // FIX: Inject TTS service for per-question audio generation
-            ApplicationEventPublisher eventPublisher) {
+            ApplicationEventPublisher eventPublisher,
+            InterviewConfig interviewConfig) { // Inject hybrid interview config
         this.interviewRepository = interviewRepository;
         this.resumeRepository = resumeRepository;
         this.jobRoleRepository = jobRoleRepository;
@@ -127,6 +132,7 @@ public class InterviewService {
         this.aiFeedbackService = aiFeedbackService;
         this.textToSpeechService = textToSpeechService; // FIX: Store TTS service reference
         this.eventPublisher = eventPublisher;
+        this.interviewConfig = interviewConfig; // Store hybrid config
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -224,11 +230,23 @@ public class InterviewService {
         // P1-9: Reduced max from 20 to 10, default from 10 to 5 for API cost control.
         int finalNumQuestions = (numQuestions != null && numQuestions > 0 && numQuestions <= 10) ? numQuestions : 5;
 
+        // Hybrid mode: determine how many questions to pre-generate
+        int pregenCount = Math.min(interviewConfig.getPregenCount(), finalNumQuestions);
+        boolean hybridMode = interviewConfig.isHybridModeEnabled(finalNumQuestions);
+
+        log.info("Interview {} using {} mode: pregenCount={}, totalQuestions={}",
+                interview.getId(), hybridMode ? "HYBRID" : "FULL_PREGEN", pregenCount, finalNumQuestions);
+
+        // Store total question count on interview for later use in dynamic generation
+        interview.setTotalQuestions(finalNumQuestions);
+        interviewRepository.save(interview);
+
         // FIX: Wrap entire question generation + TTS in try-catch so errors are actionable
         List<Question> questions;
         try {
-            // Step 1: Generate questions via Ollama
-            questions = ollamaService.generateQuestionsWithResilience(resume, jobRole, finalNumQuestions);
+            // Step 1: Generate only the pre-generated zone questions via Ollama
+            // (In hybrid mode, remaining questions will be generated dynamically after each answer)
+            questions = ollamaService.generateQuestionsWithResilience(resume, jobRole, pregenCount);
         } catch (ResourceAccessException e) {
             // FIX: Ollama connection refused — give clear instructions to the user
             log.error("Ollama is not reachable. Cannot generate questions for interview {}", interview.getId(), e);
@@ -249,6 +267,7 @@ public class InterviewService {
             Question question = questions.get(i);
             question.setQuestionNumber(i + 1);
             question.setInterview(interview);
+            question.setGenerationMode("PRE_GENERATED"); // Mark as pre-generated (not dynamic)
             // FIX: Preserve category/difficulty from Ollama if set, otherwise default
             if (question.getCategory() == null || question.getCategory().isBlank()) {
                 question.setCategory("GENERAL");
@@ -628,22 +647,22 @@ public class InterviewService {
         try {
             aiFeedbackService.generateFeedbackAsync(interviewId)
                     .thenAccept(feedback -> {
-                        // AUDIT-FIX: Use transitionTo() for state machine enforcement instead of raw setStatus()
-                        interviewRepository.findById(interviewId).ifPresent(i -> {
-                            i.transitionTo(InterviewStatus.COMPLETED);
-                            interviewRepository.save(i);
-                            log.info("Interview ID: {} completed with score: {}",
-                                    interviewId, feedback.getOverallScore());
-                        });
+                        // FIX: Transition to COMPLETED with retry to handle optimistic locking.
+                        // AIFeedbackService.generateFeedback() already saved the interview
+                        // (bumping @Version), so we must re-fetch to get the latest version.
+                        transitionInterviewWithRetry(interviewId, InterviewStatus.COMPLETED);
+                        log.info("Interview ID: {} completed with score: {}",
+                                interviewId, feedback.getOverallScore());
+
+                        // Clean up video files after feedback is generated to save storage
+                        // Keep transcriptions in database for history
+                        cleanupVideoFiles(interviewId);
                     })
                     .exceptionally(ex -> {
                         log.error("Async feedback generation failed. Transitioning interview ID: {} to FAILED",
                                 interviewId, ex);
-                        // AUDIT-FIX: Use transitionTo() for state machine enforcement instead of raw setStatus()
-                        interviewRepository.findById(interviewId).ifPresent(i -> {
-                            i.transitionTo(InterviewStatus.FAILED);
-                            interviewRepository.save(i);
-                        });
+                        // FIX: Transition to FAILED with retry to handle optimistic locking
+                        transitionInterviewWithRetry(interviewId, InterviewStatus.FAILED);
                         return null;
                     });
         } catch (Exception e) {
@@ -784,6 +803,268 @@ public class InterviewService {
         interviewRepository.delete(interview);
 
         log.info("Successfully deleted interview ID: {} with {} video files", interviewId, responses.size());
+    }
+
+    /**
+     * Clean up video files after interview completion to save storage.
+     * Transcription data is preserved in the database for history.
+     *
+     * @param interviewId the interview to clean up
+     */
+    private void cleanupVideoFiles(Long interviewId) {
+        List<Response> responses = responseRepository.findByInterviewId(interviewId);
+        int deletedCount = 0;
+        for (Response response : responses) {
+            if (response.getVideoUrl() != null && !response.getVideoUrl().isBlank()) {
+                try {
+                    videoStorageService.deleteFile(response.getVideoUrl());
+                    response.setVideoUrl(null);
+                    responseRepository.save(response);
+                    deletedCount++;
+                } catch (Exception e) {
+                    log.warn("Failed to delete video file during cleanup: {} - {}",
+                            response.getVideoUrl(), e.getMessage());
+                }
+            }
+        }
+        log.info("Cleaned up {} video files for interview ID: {}", deletedCount, interviewId);
+    }
+
+    /**
+     * Transition an interview to a new status with optimistic lock retry.
+     *
+     * <p>Re-fetches the interview from the database to get the latest @Version,
+     * then transitions to the target status. Retries up to 3 times on
+     * optimistic locking conflicts.</p>
+     *
+     * @param interviewId the interview to transition
+     * @param target      the target status
+     */
+    private void transitionInterviewWithRetry(Long interviewId, InterviewStatus target) {
+        int maxRetries = 3;
+        for (int attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                Interview fresh = interviewRepository.findById(interviewId)
+                        .orElseThrow(() -> new RuntimeException("Interview not found: " + interviewId));
+                fresh.transitionTo(target);
+                if (target == InterviewStatus.COMPLETED) {
+                    fresh.setCompletedAt(LocalDateTime.now());
+                }
+                interviewRepository.save(fresh);
+                log.info("Transitioned interview {} to {} (attempt {})", interviewId, target, attempt);
+                return;
+            } catch (ObjectOptimisticLockingFailureException e) {
+                log.warn("Optimistic lock conflict transitioning interview {} to {} (attempt {}/{})",
+                        interviewId, target, attempt, maxRetries);
+                if (attempt == maxRetries) {
+                    log.error("Failed to transition interview {} to {} after {} retries",
+                            interviewId, target, maxRetries, e);
+                }
+                try { Thread.sleep(100L * attempt); } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                }
+            } catch (IllegalStateException e) {
+                // Invalid state transition — the interview is already in a terminal state
+                log.warn("Invalid state transition for interview {} to {}: {}",
+                        interviewId, target, e.getMessage());
+                return;
+            }
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // 8. Hybrid Interview: Submit Answer and Get Next Question
+    // ════════════════════════════════════════════════════════════════
+
+    /**
+     * Submit an answer to a question and get the next question (hybrid mode).
+     *
+     * <p>In hybrid mode, this method handles the transition between questions:
+     * <ul>
+     *   <li>Records the user's answer for the current question</li>
+     *   <li>If more questions remain and we're in the DYNAMIC ZONE, generates
+     *       the next question adaptively based on all previous Q&A pairs</li>
+     *   <li>Generates TTS audio for the new question</li>
+     *   <li>Returns the next question or indicates interview completion</li>
+     * </ul>
+     *
+     * <p>This method is idempotent for the answer submission part — if an answer
+     * already exists for the question, it returns the next question without
+     * re-recording the answer.</p>
+     *
+     * @param userId           the authenticated user's ID
+     * @param interviewId      the interview ID
+     * @param currentQuestionId the question being answered
+     * @param submission       the answer submission DTO
+     * @return NextQuestionResponseDTO with the next question or completion status
+     */
+    @Transactional
+    public NextQuestionResponseDTO submitAnswerAndGetNext(
+            Long userId,
+            Long interviewId,
+            Long currentQuestionId,
+            AnswerSubmissionDTO submission) {
+
+        log.info("submitAnswerAndGetNext: user={}, interview={}, question={}",
+                userId, interviewId, currentQuestionId);
+
+        // ── Validate interview ownership and state ───────────────────
+        Interview interview = interviewRepository.findByIdAndUserId(interviewId, userId)
+                .orElseThrow(() -> new RuntimeException(
+                        "Interview not found or does not belong to user: " + interviewId));
+
+        if (interview.getStatus() != InterviewStatus.IN_PROGRESS) {
+            throw new RuntimeException("Interview is not in progress. Current status: " + interview.getStatus());
+        }
+
+        // ── Validate current question belongs to interview ───────────
+        Question currentQuestion = questionRepository.findById(currentQuestionId)
+                .orElseThrow(() -> new RuntimeException("Question not found: " + currentQuestionId));
+
+        if (!currentQuestion.getInterview().getId().equals(interviewId)) {
+            throw new RuntimeException("Question does not belong to this interview");
+        }
+
+        // ── Record answer (if not already recorded) ──────────────────
+        Optional<Response> existingResponse = responseRepository.findByQuestionId(currentQuestionId);
+        if (existingResponse.isEmpty()) {
+            Response response = new Response();
+            response.setQuestion(currentQuestion);
+            response.setInterview(interview);
+            response.setUser(interview.getUser());
+            response.setTranscription(submission.getAnswerTranscript());
+            response.setVideoUrl(submission.getAnswerVideoUrl());
+            response.setVideoDuration(submission.getDurationSeconds());
+            responseRepository.save(response);
+            log.info("Answer recorded for question {} (interview {})", currentQuestionId, interviewId);
+        } else {
+            log.info("Answer already exists for question {} — skipping save", currentQuestionId);
+        }
+
+        // ── Determine total questions and current position ───────────
+        Integer totalQuestions = interview.getTotalQuestions();
+        if (totalQuestions == null) {
+            // Fallback for interviews created before hybrid mode was added
+            totalQuestions = questionRepository.findByInterviewIdOrderByQuestionNumber(interviewId).size();
+        }
+
+        int currentQuestionNumber = currentQuestion.getQuestionNumber();
+        int nextQuestionNumber = currentQuestionNumber + 1;
+
+        // ── Check if interview is complete ───────────────────────────
+        if (nextQuestionNumber > totalQuestions) {
+            log.info("Interview {} complete after question {}", interviewId, currentQuestionNumber);
+            return NextQuestionResponseDTO.completed(totalQuestions);
+        }
+
+        // ── Get or generate the next question ────────────────────────
+        Question nextQuestion = findOrGenerateNextQuestion(
+                interview, currentQuestion, nextQuestionNumber, totalQuestions);
+
+        // ── Build response ───────────────────────────────────────────
+        return new NextQuestionResponseDTO()
+                .nextQuestionId(nextQuestion.getId())
+                .nextQuestionText(nextQuestion.getQuestionText())
+                .nextQuestionNumber(nextQuestion.getQuestionNumber())
+                .nextQuestionAudioUrl(resolveToPresignedUrl(nextQuestion.getAudioUrl()))
+                .nextQuestionCategory(nextQuestion.getCategory())
+                .nextQuestionDifficulty(nextQuestion.getDifficulty())
+                .generationMode(nextQuestion.getGenerationMode())
+                .totalQuestions(totalQuestions)
+                .interviewComplete(false);
+    }
+
+    /**
+     * Find an existing question or generate a new dynamic question.
+     *
+     * <p>In hybrid mode, questions in the PRE_GENERATED zone already exist
+     * in the database. Questions in the DYNAMIC zone are generated on-demand
+     * based on the interview history.</p>
+     */
+    private Question findOrGenerateNextQuestion(
+            Interview interview,
+            Question currentQuestion,
+            int nextQuestionNumber,
+            int totalQuestions) {
+
+        Long interviewId = interview.getId();
+
+        // Check if the question already exists (pre-generated or previously generated)
+        Optional<Question> existingQuestion = questionRepository
+                .findByInterviewIdAndQuestionNumber(interviewId, nextQuestionNumber);
+
+        if (existingQuestion.isPresent()) {
+            log.debug("Question {} already exists for interview {}", nextQuestionNumber, interviewId);
+            return existingQuestion.get();
+        }
+
+        // Question doesn't exist — we're in the DYNAMIC zone, generate it
+        log.info("Generating dynamic question {} for interview {}", nextQuestionNumber, interviewId);
+
+        // Build Q&A history from all previous questions and answers
+        List<QuestionAnswerPair> qaHistory = buildQAHistory(interviewId);
+
+        // Generate the next adaptive question via Ollama
+        Question newQuestion = ollamaService.generateNextAdaptiveQuestion(
+                interview, qaHistory, nextQuestionNumber, totalQuestions);
+
+        // Set interview reference and metadata
+        newQuestion.setInterview(interview);
+        newQuestion.setQuestionNumber(nextQuestionNumber);
+        newQuestion.setGenerationMode("DYNAMIC");
+        newQuestion.setGeneratedAfterQuestionId(currentQuestion.getId());
+
+        // Default category/difficulty if not set by Ollama
+        if (newQuestion.getCategory() == null || newQuestion.getCategory().isBlank()) {
+            newQuestion.setCategory("TECHNICAL");
+        }
+        if (newQuestion.getDifficulty() == null || newQuestion.getDifficulty().isBlank()) {
+            newQuestion.setDifficulty("MEDIUM");
+        }
+
+        // Save to get ID before TTS generation
+        newQuestion = questionRepository.save(newQuestion);
+
+        // Generate TTS audio for the new question
+        try {
+            String audioS3Key = textToSpeechService.generateSpeech(
+                    newQuestion.getQuestionText(), newQuestion.getId());
+            newQuestion.setAudioUrl(audioS3Key);
+            newQuestion = questionRepository.save(newQuestion);
+            log.info("TTS audio generated for dynamic question {} (interview {})",
+                    newQuestion.getId(), interviewId);
+        } catch (Exception e) {
+            log.warn("TTS generation failed for dynamic question {} — continuing without audio: {}",
+                    newQuestion.getId(), e.getMessage());
+        }
+
+        return newQuestion;
+    }
+
+    /**
+     * Build the Q&A history for all answered questions in the interview.
+     *
+     * <p>Returns a list of QuestionAnswerPair DTOs in chronological order,
+     * used as context for generating the next adaptive question.</p>
+     */
+    private List<QuestionAnswerPair> buildQAHistory(Long interviewId) {
+        List<Question> questions = questionRepository.findByInterviewIdOrderByQuestionNumber(interviewId);
+        List<QuestionAnswerPair> history = new ArrayList<>();
+
+        for (Question question : questions) {
+            Optional<Response> responseOpt = responseRepository.findByQuestionId(question.getId());
+            if (responseOpt.isPresent()) {
+                Response response = responseOpt.get();
+                history.add(new QuestionAnswerPair(
+                        question.getQuestionNumber(),
+                        question.getQuestionText(),
+                        response.getTranscription() != null ? response.getTranscription() : ""
+                ));
+            }
+        }
+
+        log.debug("Built Q&A history with {} pairs for interview {}", history.size(), interviewId);
+        return history;
     }
 
     // ════════════════════════════════════════════════════════════════

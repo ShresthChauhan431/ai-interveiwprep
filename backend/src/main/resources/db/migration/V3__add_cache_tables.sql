@@ -8,20 +8,20 @@
 -- cache_key: SHA-256 hex (64 chars) of normalized input + config
 -- s3_key:    S3 object key where the cached artifact is stored
 
-CREATE TABLE avatar_video_cache (
+CREATE TABLE IF NOT EXISTS avatar_video_cache (
     id         BIGINT       AUTO_INCREMENT PRIMARY KEY,
     cache_key  VARCHAR(64)  NOT NULL,
     s3_key     VARCHAR(512) NOT NULL,
     created_at TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT uq_avatar_cache_key UNIQUE (cache_key)
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE tts_audio_cache (
+CREATE TABLE IF NOT EXISTS tts_audio_cache (
     id         BIGINT       AUTO_INCREMENT PRIMARY KEY,
     cache_key  VARCHAR(64)  NOT NULL,
     s3_key     VARCHAR(512) NOT NULL,
     created_at TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT uq_tts_cache_key UNIQUE (cache_key)
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

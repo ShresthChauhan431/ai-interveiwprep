@@ -1,5 +1,6 @@
 package com.interview.platform.controller;
 
+import com.interview.platform.dto.ResumeAnalysisDTO;
 import com.interview.platform.dto.ResumeResponse;
 import com.interview.platform.model.Resume;
 import com.interview.platform.repository.ResumeRepository;
@@ -89,6 +90,16 @@ public class ResumeController {
         Long userId = getUserIdFromRequest(request);
         resumeService.deleteResume(id, userId);
         return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Analyze the user's latest resume and provide feedback.
+     */
+    @GetMapping("/analyze")
+    public ResponseEntity<ResumeAnalysisDTO> analyzeResume(HttpServletRequest request) {
+        Long userId = getUserIdFromRequest(request);
+        ResumeAnalysisDTO analysis = resumeService.analyzeResume(userId);
+        return ResponseEntity.ok(analysis);
     }
 
     private Long getUserIdFromRequest(HttpServletRequest request) {

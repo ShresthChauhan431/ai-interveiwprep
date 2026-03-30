@@ -16,12 +16,19 @@ import {
   Button,
   Alert,
   LinearProgress,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogContentText,
+  DialogActions,
 } from "@mui/material";
 import {
   VideoLibrary,
   CheckCircle,
   RadioButtonChecked,
   Replay,
+  Stop,
+  AutoAwesome, // HYBRID: Icon for dynamic question generation indicator
 } from "@mui/icons-material";
 import { InterviewDTO, InterviewQuestion } from "../../types";
 import { interviewService } from "../../services/interview.service";
@@ -32,6 +39,7 @@ import { useInterviewStore } from "../../stores/useInterviewStore";
 import { useInterviewEvents } from "../../hooks/useInterviewEvents";
 import { useProctoring } from "../../hooks/useProctoring"; // FIX: Import proctoring hook for surveillance system (Issue 3)
 import { ProctoringWarning } from "./ProctoringWarning"; // FIX: Import proctoring warning overlay component (Issue 3)
+import { useHybridInterview } from "../../hooks/useHybridInterview"; // HYBRID: Import hybrid interview hook for dynamic question generation
 
 // ============================================================
 // Props
@@ -81,6 +89,20 @@ const InterviewRoom: React.FC<InterviewRoomProps> = ({
   // ── Real-time Events (SSE) ──────────────────────────────────
   useInterviewEvents(interviewId);
 
+  // ── Hybrid Interview Hook ───────────────────────────────────
+  // HYBRID: Use the hybrid interview hook for dynamic question generation
+  const {
+    isTransitioning: isHybridTransitioning,
+    generationMode,
+    transitionError: hybridError,
+    clearTransitionError: clearHybridError,
+    advanceToNext,
+  } = useHybridInterview({
+    interviewId,
+    onError: (err) => setError(err),
+    onComplete: () => handleComplete(),
+  });
+
   // ── Local UI State ──────────────────────────────────────────
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
@@ -91,6 +113,7 @@ const InterviewRoom: React.FC<InterviewRoomProps> = ({
   );
   const [hasStarted, setHasStarted] = useState(false);
   const [avatarReplayKey, setAvatarReplayKey] = useState(0); // bump to replay avatar
+  const [endInterviewOpen, setEndInterviewOpen] = useState(false); // End Interview dialog state
 
   // FIX: Ref to the candidate's camera video element for BlazeFace face detection (Issue 3)
   const candidateVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -199,11 +222,56 @@ const InterviewRoom: React.FC<InterviewRoomProps> = ({
     }
   }, [interviewId, navigate]);
 
+  // ============================================================
+  // End Interview Handler
+  // ============================================================
+  
+  const handleEndInterview = useCallback(async () => {
+    // Stop any ongoing TTS playback
+    if (window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+
+    setIsCompleting(true);
+    setEndInterviewOpen(false);
+
+    try {
+      // Complete the interview with whatever answers have been submitted
+      await interviewService.completeInterview(interviewId);
+      navigate(`/interview/${interviewId}/complete`);
+    } catch (err: any) {
+      // Even if API fails, navigate to results if user has answered some questions
+      if (answeredQuestionIds.size > 0) {
+        navigate(`/interview/${interviewId}/complete`);
+      } else {
+        setError(err.message || "Failed to end interview. Please try again.");
+        setIsCompleting(false);
+      }
+    }
+  }, [interviewId, navigate, answeredQuestionIds.size]);
+
+  const handleOpenEndInterview = useCallback(() => {
+    // Stop any ongoing TTS playback
+    if (window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+    setEndInterviewOpen(true);
+  }, []);
+
+  const handleCloseEndInterview = useCallback(() => {
+    setEndInterviewOpen(false);
+  }, []);
+
   /**
-   * Handle video blob submission: upload via presigned flow, advance question.
+   * Handle video blob submission: upload via hybrid flow, advance question.
+   * HYBRID: This now uses the hybrid interview hook which handles:
+   * 1. Video upload (presigned or legacy fallback)
+   * 2. Answer submission to backend
+   * 3. Dynamic question generation (if in dynamic zone)
+   * 4. Question advancement
    */
   const handleVideoSubmit = useCallback(
-    async (videoBlob: Blob) => {
+    async (videoBlob: Blob, answerTranscript?: string) => {
       // FIX: Top-level guard — never proceed if no question or interview terminated
       if (!currentQuestion) return;
       if (isTerminated) return; // FIX: Don't allow submission if interview has been terminated by proctoring (Issue 3)
@@ -213,46 +281,26 @@ const InterviewRoom: React.FC<InterviewRoomProps> = ({
       setError(null);
 
       try {
-        // FIX: Try presigned upload first, fall back to legacy multipart if it fails
-        try {
-          await interviewService.submitVideoPresigned(
-            interviewId,
-            currentQuestion.questionId,
-            videoBlob,
-            (progress) => setUploadProgress(progress),
-          );
-        } catch (presignedErr: any) {
-          // FIX: Presigned upload failed — fall back to legacy multipart upload so the answer is not lost
-          console.warn(
-            "Presigned upload failed, falling back to legacy multipart:",
-            presignedErr?.message,
-          );
-          setUploadProgress(0);
-          await interviewService.submitVideoResponse(
-            videoBlob,
-            interviewId,
-            currentQuestion.questionId,
-            (progress) => setUploadProgress(progress),
-          );
-        }
+        // HYBRID: Use the hybrid flow which handles upload + answer submission + next question generation
+        // Pass an empty transcript if not provided — backend will get it from transcription service
+        const transcript = answerTranscript || "";
+        
+        const success = await advanceToNext(
+          videoBlob,
+          transcript,
+          (progress) => setUploadProgress(progress),
+        );
 
-        // Mark locally as answered
-        setAnsweredQuestionIds((prev) => {
-          const next = new Set(prev);
-          next.add(currentQuestion.questionId);
-          return next;
-        });
-
-        if (!isLastQuestion) {
-          // FIX: Advance to next question and reset recorder state (Issue 2 — sequential one-at-a-time flow)
-          const next = currentQuestionIndex + 1; // FIX: Capture next index before state update
-          setCurrentQuestionIndex(next);
-          setRecordingState(false);
+        if (success) {
+          // Mark locally as answered
+          setAnsweredQuestionIds((prev) => {
+            const next = new Set(prev);
+            next.add(currentQuestion.questionId);
+            return next;
+          });
           setUploadProgress(0);
-        } else {
-          // Last question answered — complete the interview
-          await handleComplete();
         }
+        // Note: advanceToNext handles question advancement and calls onComplete for last question
       } catch (err: any) {
         // FIX: Show inline error with retry hint — NEVER navigate away from the interview on a submit error
         setError(
@@ -264,13 +312,8 @@ const InterviewRoom: React.FC<InterviewRoomProps> = ({
       }
     },
     [
-      interviewId,
       currentQuestion,
-      isLastQuestion,
-      currentQuestionIndex,
-      setCurrentQuestionIndex,
-      setRecordingState,
-      handleComplete,
+      advanceToNext,
       isTerminated, // FIX: Added isTerminated dependency for proctoring guard (Issue 3)
     ],
   );
@@ -497,9 +540,26 @@ const InterviewRoom: React.FC<InterviewRoomProps> = ({
           <Typography variant="body2" color="text.secondary" fontWeight={500}>
             Question {currentQuestionIndex + 1} of {totalQuestions}
           </Typography>
-          <Typography variant="body2" color="text.secondary">
-            {answeredCount} answered
-          </Typography>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
+            <Typography variant="body2" color="text.secondary">
+              {answeredCount} answered
+            </Typography>
+            {/* End Interview Button */}
+            <Button
+              variant="outlined"
+              color="error"
+              size="small"
+              startIcon={<Stop />}
+              onClick={handleOpenEndInterview}
+              sx={{ 
+                borderRadius: 2,
+                textTransform: "none",
+                fontWeight: 500,
+              }}
+            >
+              End Interview
+            </Button>
+          </Box>
         </Box>
         <LinearProgress
           variant="determinate"
@@ -513,13 +573,16 @@ const InterviewRoom: React.FC<InterviewRoomProps> = ({
       </Box>
 
       {/* ── Error alert ── */}
-      {error && (
+      {(error || hybridError) && (
         <Alert
           severity="error"
-          onClose={() => setError(null)}
+          onClose={() => {
+            setError(null);
+            clearHybridError();
+          }}
           sx={{ mb: 3, borderRadius: 2 }}
         >
-          {error}
+          {error || hybridError}
         </Alert>
       )}
 
@@ -534,8 +597,22 @@ const InterviewRoom: React.FC<InterviewRoomProps> = ({
         </Box>
       )}
 
+      {/* HYBRID: Generating next question overlay */}
+      {isHybridTransitioning && !isCompleting && (
+        <Box sx={{ textAlign: "center", py: 6 }}>
+          <CircularProgress size={48} sx={{ mb: 2 }} color="secondary" />
+          <Typography variant="h6">
+            <AutoAwesome sx={{ mr: 1, verticalAlign: "middle" }} />
+            Generating Your Next Question...
+          </Typography>
+          <Typography color="text.secondary">
+            Our AI is crafting a personalized follow-up based on your answer.
+          </Typography>
+        </Box>
+      )}
+
       {/* ── Main interview layout ── */}
-      {!isCompleting && currentQuestion && (
+      {!isCompleting && !isHybridTransitioning && currentQuestion && (
         <Box
           display="grid"
           gridTemplateColumns={{ xs: "1fr", md: "1fr 1fr" }}
@@ -597,6 +674,17 @@ const InterviewRoom: React.FC<InterviewRoomProps> = ({
                         ? "warning"
                         : "success"
                   }
+                />
+              )}
+              {/* HYBRID: Show indicator when question was dynamically generated */}
+              {generationMode === "DYNAMIC" && (
+                <Chip
+                  icon={<AutoAwesome sx={{ fontSize: 14 }} />}
+                  label="Adaptive"
+                  size="small"
+                  variant="filled"
+                  color="secondary"
+                  sx={{ fontWeight: 500 }}
                 />
               )}
             </Box>
@@ -664,7 +752,7 @@ const InterviewRoom: React.FC<InterviewRoomProps> = ({
       )}
 
       {/* ── Navigation row (previous / finish early) ── */}
-      {!isCompleting && (
+      {!isCompleting && !isHybridTransitioning && (
         <Box
           sx={{
             display: "flex",
@@ -678,7 +766,7 @@ const InterviewRoom: React.FC<InterviewRoomProps> = ({
         >
           <Button
             variant="outlined"
-            disabled={currentQuestionIndex === 0 || isUploading || isTerminated} // FIX: Disable navigation when terminated (Issue 3); also only allow going back to already-answered questions (Issue 2)
+            disabled={currentQuestionIndex === 0 || isUploading || isTerminated || isHybridTransitioning} // FIX: Disable navigation when terminated (Issue 3); HYBRID: Also disable during question generation
             onClick={() => {
               // FIX: Only allow going back if previous question was already answered — read-only review mode (Issue 2)
               const prevIndex = currentQuestionIndex - 1;
@@ -707,7 +795,7 @@ const InterviewRoom: React.FC<InterviewRoomProps> = ({
               variant="contained"
               color="success"
               onClick={handleComplete}
-              disabled={isUploading || isCompleting || isTerminated} // FIX: Disable finish when terminated by proctoring (Issue 3)
+              disabled={isUploading || isCompleting || isTerminated || isHybridTransitioning} // FIX: Disable finish when terminated by proctoring (Issue 3); HYBRID: Also disable during question generation
               sx={{ borderRadius: 2 }}
             >
               Finish Interview
@@ -719,7 +807,7 @@ const InterviewRoom: React.FC<InterviewRoomProps> = ({
             <Button
               variant="text"
               color="inherit"
-              disabled={isUploading || isTerminated} // FIX: Disable navigation when terminated by proctoring (Issue 3)
+              disabled={isUploading || isTerminated || isHybridTransitioning} // FIX: Disable navigation when terminated by proctoring (Issue 3); HYBRID: Also disable during question generation
               onClick={() => {
                 setCurrentQuestionIndex(currentQuestionIndex + 1);
                 setRecordingState(false);
@@ -731,6 +819,42 @@ const InterviewRoom: React.FC<InterviewRoomProps> = ({
           )}
         </Box>
       )}
+
+      {/* End Interview Confirmation Dialog */}
+      <Dialog
+        open={endInterviewOpen}
+        onClose={handleCloseEndInterview}
+        aria-labelledby="end-interview-dialog-title"
+        aria-describedby="end-interview-dialog-description"
+      >
+        <DialogTitle id="end-interview-dialog-title" sx={{ fontWeight: 600 }}>
+          End Interview?
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText id="end-interview-dialog-description">
+            Are you sure you want to end the interview? 
+            {answeredQuestionIds.size > 0 ? (
+              <> Your {answeredQuestionIds.size} answer{answeredQuestionIds.size > 1 ? "s" : ""} will be submitted for feedback.</>
+            ) : (
+              <> No answers will be recorded.</>
+            )}
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={handleCloseEndInterview} color="inherit">
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleEndInterview} 
+            color="error" 
+            variant="contained"
+            disabled={isCompleting}
+            startIcon={<Stop />}
+          >
+            {isCompleting ? "Ending..." : "End Interview"}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Container>
   );
 };

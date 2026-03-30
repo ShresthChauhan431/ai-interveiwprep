@@ -19,15 +19,17 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestTemplate;
 
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
-import java.util.regex.Matcher; // FIX: Import for regex JSON extraction fallback
-import java.util.regex.Pattern; // FIX: Import for regex JSON extraction fallback
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Service for generating AI-powered interview feedback using a local Ollama
@@ -119,7 +121,7 @@ public class AIFeedbackService {
      * @param interviewId the interview to generate feedback for
      * @return the persisted Feedback entity
      */
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Feedback generateFeedback(Long interviewId) {
         log.info("Generating AI feedback for interview ID: {}", interviewId);
 
@@ -167,12 +169,51 @@ public class AIFeedbackService {
         Feedback feedback = createFeedbackEntity(interview, feedbackDTO);
 
         // Step 8: Update interview with overall score
-        interview.setOverallScore(feedbackDTO.getScore());
-        interviewRepository.save(interview);
+        // FIX: Re-fetch the interview to get the LATEST version, avoiding
+        // OptimisticLockingFailureException when the completeInterview callback
+        // has already bumped the version number.
+        saveInterviewScoreWithRetry(interviewId, feedbackDTO.getScore());
 
         log.info("AI feedback generated for interview ID: {} — score: {}", interviewId, feedbackDTO.getScore());
 
         return feedback;
+    }
+
+    /**
+     * Save the overall score on the Interview entity with optimistic lock retry.
+     *
+     * <p>This method re-fetches the interview from the database to get the latest
+     * version before saving. If a concurrent update causes an optimistic locking
+     * failure, it retries up to 3 times with a fresh fetch each time.</p>
+     *
+     * @param interviewId the interview to update
+     * @param score       the overall score to set
+     */
+    private void saveInterviewScoreWithRetry(Long interviewId, int score) {
+        int maxRetries = 3;
+        for (int attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                // Always re-fetch to get the latest version
+                Interview freshInterview = interviewRepository.findById(interviewId)
+                        .orElseThrow(() -> new RuntimeException("Interview not found: " + interviewId));
+                freshInterview.setOverallScore(score);
+                interviewRepository.save(freshInterview);
+                log.debug("Saved overall score {} for interview {} (attempt {})", score, interviewId, attempt);
+                return; // Success — exit the retry loop
+            } catch (ObjectOptimisticLockingFailureException e) {
+                log.warn("Optimistic locking conflict saving score for interview {} (attempt {}/{})",
+                        interviewId, attempt, maxRetries);
+                if (attempt == maxRetries) {
+                    log.error("Failed to save interview score after {} retries — score may not be persisted",
+                            maxRetries, e);
+                    // Don't crash — feedback entity is already saved, just score won't be on interview
+                }
+                // Brief sleep before retry to let the competing transaction finish
+                try { Thread.sleep(100L * attempt); } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        }
     }
 
     /**

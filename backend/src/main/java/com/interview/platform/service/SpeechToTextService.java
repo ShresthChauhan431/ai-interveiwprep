@@ -112,6 +112,9 @@ public class SpeechToTextService {
     @Value("${assemblyai.api.url:https://api.assemblyai.com/v2}")
     private String apiBaseUrl;
 
+    @Value("${app.base-url:http://localhost:8081}")
+    private String appBaseUrl;
+
     public SpeechToTextService(RestTemplate restTemplate,
             ObjectMapper objectMapper,
             ResponseRepository responseRepository,
@@ -147,6 +150,25 @@ public class SpeechToTextService {
      */
     public TranscriptionResult transcribeVideo(String videoUrlOrKey) {
         log.info("Starting transcription for: {}", videoUrlOrKey);
+
+        // FIX: Detect missing/invalid API keys early
+        if (apiKey == null || apiKey.isBlank() || apiKey.equals("your-api-key-here")
+                || apiKey.equals("${ASSEMBLYAI_API_KEY}")) {
+            log.warn("AssemblyAI API key is missing or placeholder — returning empty transcription. "
+                    + "Set ASSEMBLYAI_API_KEY in .env to enable cloud transcription.");
+            return new TranscriptionResult("[Transcription unavailable — API key not configured]", 0.0);
+        }
+
+        // FIX: Detect localhost mode — AssemblyAI (cloud) cannot access localhost URLs
+        if (appBaseUrl != null && (appBaseUrl.contains("localhost") || appBaseUrl.contains("127.0.0.1"))) {
+            if (videoUrlOrKey != null && (videoUrlOrKey.contains("localhost") || videoUrlOrKey.contains("127.0.0.1")
+                    || !videoUrlOrKey.startsWith("http"))) {
+                log.warn("Local development mode detected — AssemblyAI cannot access local files. "
+                        + "Returning placeholder transcription for: {}", videoUrlOrKey);
+                return new TranscriptionResult(
+                        "[Transcription unavailable in local mode — use browser speech recognition]", 0.5);
+            }
+        }
 
         // Resolve S3 key to a presigned URL if needed
         String accessibleUrl = resolveToAccessibleUrl(videoUrlOrKey);
@@ -238,8 +260,20 @@ public class SpeechToTextService {
             throw new IllegalArgumentException("Video URL or S3 key must not be null or blank");
         }
 
-        // If it already looks like a URL, use as-is (backward compatibility)
+        // If it looks like a URL, validate it's not a localhost URL (AssemblyAI can't access localhost)
         if (videoUrlOrKey.startsWith("http://") || videoUrlOrKey.startsWith("https://")) {
+            // Reject localhost URLs - AssemblyAI cannot access them
+            if (videoUrlOrKey.contains("localhost") || videoUrlOrKey.contains("127.0.0.1")) {
+                log.warn("Localhost URL detected ({}). Attempting to extract S3 key and generate presigned URL.", videoUrlOrKey);
+                // Try to extract S3 key from the URL path
+                // Format: /api/files/interviews/{userId}/{interviewId}/{filename}
+                String s3Key = extractS3KeyFromLocalUrl(videoUrlOrKey);
+                if (s3Key != null) {
+                    return videoStorageService.generatePresignedGetUrl(s3Key, 60);
+                }
+                throw new IllegalArgumentException("Cannot transcribe localhost URL. Video must be in S3.");
+            }
+            // For other URLs (e.g., already a presigned S3 URL), use as-is
             log.debug("Using provided URL directly for transcription: {}", videoUrlOrKey);
             return videoUrlOrKey;
         }
@@ -247,6 +281,29 @@ public class SpeechToTextService {
         // It's an S3 key — generate a presigned GET URL
         log.debug("Generating presigned URL from S3 key for transcription: {}", videoUrlOrKey);
         return videoStorageService.generatePresignedGetUrl(videoUrlOrKey, 60);
+    }
+
+    /**
+     * Extract S3 key from a local server URL.
+     * Expected format: /api/files/interviews/{userId}/{interviewId}/{filename}
+     */
+    private String extractS3KeyFromLocalUrl(String url) {
+        try {
+            // URL format: http://localhost:8081/api/files/interviews/11/88/response_226_xxx.webm
+            // or: http://127.0.0.1:8081/api/files/interviews/11/88/response_226_xxx.webm
+            String path = url;
+            if (url.contains("/api/files/")) {
+                path = url.substring(url.indexOf("/api/files/") + "/api/files/".length());
+            }
+            // path is now: interviews/11/88/response_226_xxx.webm
+            if (path.startsWith("interviews/")) {
+                return path;
+            }
+            return "interviews/" + path;
+        } catch (Exception e) {
+            log.error("Failed to extract S3 key from URL: {}", url, e);
+            return null;
+        }
     }
 
     // ════════════════════════════════════════════════════════════════

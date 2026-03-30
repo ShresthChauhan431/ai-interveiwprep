@@ -3,6 +3,8 @@ package com.interview.platform.service;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.interview.platform.dto.QuestionAnswerPair;
+import com.interview.platform.model.Interview;
 import com.interview.platform.model.JobRole;
 import com.interview.platform.model.Question;
 import com.interview.platform.model.Resume;
@@ -24,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher; // FIX: Import for regex JSON extraction fallback
 import java.util.regex.Pattern; // FIX: Import for regex JSON extraction fallback
+import java.util.stream.Collectors;
 
 /**
  * Service for interacting with the local Ollama LLM API to generate questions.
@@ -125,6 +128,259 @@ public class OllamaService {
             log.error("Ollama question generation failed after retries, using generic fallback: {}", e.getMessage());
             return generateGenericQuestions(jobRole.getTitle(), numQuestions);
         }
+    }
+
+    /**
+     * Generate the next adaptive interview question based on the conversation history.
+     *
+     * <p>This method is used in the DYNAMIC ZONE of hybrid interviews. It takes
+     * into account:</p>
+     * <ul>
+     *   <li>The job role and its required skills</li>
+     *   <li>The candidate's resume</li>
+     *   <li>All previous question-answer pairs from the interview</li>
+     *   <li>The current question number and total questions remaining</li>
+     * </ul>
+     *
+     * <p>The generated question adapts to the candidate's demonstrated knowledge
+     * based on their previous answers — probing deeper on weak areas or advancing
+     * to more challenging topics if they're doing well.</p>
+     *
+     * @param interview          the current interview (contains jobRole and resume)
+     * @param previousQAPairs    list of previous Q&A pairs in chronological order
+     * @param nextQuestionNumber the 1-based number of the question to generate
+     * @param totalQuestions     total number of questions in the interview
+     * @return a Question entity with the generated question (not yet persisted)
+     */
+    public Question generateNextAdaptiveQuestion(
+            Interview interview,
+            List<QuestionAnswerPair> previousQAPairs,
+            int nextQuestionNumber,
+            int totalQuestions) {
+
+        try {
+            return Decorators.ofSupplier(() -> doGenerateAdaptiveQuestion(
+                            interview, previousQAPairs, nextQuestionNumber, totalQuestions))
+                    .withRetry(ollamaRetry)
+                    .withCircuitBreaker(ollamaCircuitBreaker)
+                    .decorate()
+                    .get();
+        } catch (Exception e) {
+            log.error("Adaptive question generation failed after retries, using generic fallback: {}", e.getMessage());
+            return generateGenericFallbackQuestion(
+                    interview.getJobRole() != null ? interview.getJobRole().getTitle() : "General",
+                    nextQuestionNumber,
+                    totalQuestions);
+        }
+    }
+
+    /**
+     * Internal method that performs the actual adaptive question generation.
+     */
+    private Question doGenerateAdaptiveQuestion(
+            Interview interview,
+            List<QuestionAnswerPair> previousQAPairs,
+            int nextQuestionNumber,
+            int totalQuestions) {
+
+        String prompt = buildAdaptiveQuestionPrompt(interview, previousQAPairs, nextQuestionNumber, totalQuestions);
+
+        Map<String, Object> requestBody = new LinkedHashMap<>();
+        requestBody.put("model", model);
+        requestBody.put("format", "json");
+        requestBody.put("stream", false);
+
+        List<Map<String, String>> messages = new ArrayList<>();
+        Map<String, String> userMessage = new LinkedHashMap<>();
+        userMessage.put("role", "user");
+        userMessage.put("content", prompt);
+        messages.add(userMessage);
+
+        requestBody.put("messages", messages);
+
+        log.debug("Calling Ollama API for adaptive question generation (question {} of {})",
+                nextQuestionNumber, totalQuestions);
+
+        ResponseEntity<String> response = restTemplate.postForEntity(apiUrl, requestBody, String.class);
+
+        if (response.getBody() == null) {
+            throw new RuntimeException("Empty response from Ollama API for adaptive question");
+        }
+
+        String content = extractContentFromResponse(response.getBody());
+        return parseAdaptiveQuestionResponse(content, nextQuestionNumber);
+    }
+
+    /**
+     * Build the prompt for adaptive question generation.
+     */
+    private String buildAdaptiveQuestionPrompt(
+            Interview interview,
+            List<QuestionAnswerPair> previousQAPairs,
+            int nextQuestionNumber,
+            int totalQuestions) {
+
+        String jobTitle = interview.getJobRole() != null ? interview.getJobRole().getTitle() : "General";
+        String jobDescription = interview.getJobRole() != null && interview.getJobRole().getDescription() != null
+                ? interview.getJobRole().getDescription() : "";
+
+        String resumeSummary = "";
+        if (interview.getResume() != null && interview.getResume().getExtractedText() != null) {
+            String rawText = interview.getResume().getExtractedText();
+            resumeSummary = sanitizeResumeText(rawText);
+            // Truncate for adaptive prompts — we have conversation history taking space
+            if (resumeSummary.length() > 2000) {
+                resumeSummary = resumeSummary.substring(0, 2000) + "...";
+            }
+        }
+
+        // Build conversation history string
+        String conversationHistory = previousQAPairs.stream()
+                .map(qa -> String.format("Q%d: %s\nA%d: %s",
+                        qa.getQuestionNumber(), qa.getQuestion(),
+                        qa.getQuestionNumber(), qa.getAnswer() != null ? qa.getAnswer() : "(no answer)"))
+                .collect(Collectors.joining("\n\n"));
+
+        int questionsRemaining = totalQuestions - nextQuestionNumber + 1;
+
+        return String.format(
+                """
+                You are a skilled technical interviewer conducting an interview for a %s position.
+                
+                JOB DESCRIPTION:
+                %s
+                
+                CANDIDATE RESUME SUMMARY:
+                %s
+                
+                INTERVIEW PROGRESS: Question %d of %d (%d questions remaining including this one)
+                
+                CONVERSATION SO FAR:
+                %s
+                
+                Based on the candidate's previous answers, generate the NEXT interview question.
+                
+                ADAPTIVE GUIDELINES:
+                - If the candidate struggled with a topic, probe it differently or offer a simpler angle
+                - If the candidate showed strength, advance to more challenging or deeper questions
+                - Mix technical and behavioral questions appropriately
+                - For the final questions, consider wrap-up or reflection questions
+                - Keep questions clear, specific, and answerable in 1-2 minutes
+                
+                Return ONLY a valid JSON object in this exact format, no other text:
+                {
+                  "questionText": "Your next interview question here",
+                  "category": "TECHNICAL",
+                  "difficulty": "MEDIUM",
+                  "rationale": "Brief explanation of why this question follows logically"
+                }
+                
+                Categories: TECHNICAL, BEHAVIORAL, GENERAL
+                Difficulties: EASY, MEDIUM, HARD
+                """,
+                jobTitle,
+                jobDescription.isEmpty() ? "(No detailed description provided)" : jobDescription,
+                resumeSummary.isEmpty() ? "(No resume provided)" : resumeSummary,
+                nextQuestionNumber,
+                totalQuestions,
+                questionsRemaining,
+                conversationHistory.isEmpty() ? "(This is the first dynamically generated question)" : conversationHistory
+        );
+    }
+
+    /**
+     * Parse the response from Ollama for a single adaptive question.
+     */
+    private Question parseAdaptiveQuestionResponse(String content, int questionNumber) {
+        try {
+            // Try to extract JSON object
+            String jsonContent = content.trim();
+            
+            int startIndex = jsonContent.indexOf('{');
+            int endIndex = jsonContent.lastIndexOf('}');
+            if (startIndex >= 0 && startIndex < endIndex) {
+                jsonContent = jsonContent.substring(startIndex, endIndex + 1);
+            }
+
+            JsonNode node = objectMapper.readTree(jsonContent);
+
+            String questionText = null;
+            String category = "TECHNICAL";
+            String difficulty = "MEDIUM";
+
+            if (node.has("questionText")) {
+                questionText = node.get("questionText").asText();
+            } else if (node.has("question")) {
+                questionText = node.get("question").asText();
+            } else if (node.has("text")) {
+                questionText = node.get("text").asText();
+            }
+
+            if (node.has("category")) {
+                category = node.get("category").asText();
+            }
+            if (node.has("difficulty")) {
+                difficulty = node.get("difficulty").asText();
+            }
+
+            // Log rationale if provided (for debugging/analytics)
+            if (node.has("rationale")) {
+                log.debug("Adaptive question rationale: {}", node.get("rationale").asText());
+            }
+
+            if (questionText == null || questionText.isBlank()) {
+                log.warn("Ollama returned empty question text, using fallback");
+                return generateGenericFallbackQuestion("General", questionNumber, 5);
+            }
+
+            Question question = new Question();
+            question.setQuestionText(questionText);
+            question.setQuestionNumber(questionNumber);
+            question.setCategory(category);
+            question.setDifficulty(difficulty);
+
+            log.info("Generated adaptive question {}: {} [{}:{}]",
+                    questionNumber, 
+                    questionText.length() > 60 ? questionText.substring(0, 60) + "..." : questionText,
+                    category, difficulty);
+
+            return question;
+
+        } catch (Exception e) {
+            log.error("Failed to parse adaptive question response: {}", e.getMessage());
+            return generateGenericFallbackQuestion("General", questionNumber, 5);
+        }
+    }
+
+    /**
+     * Generate a single generic fallback question when adaptive generation fails.
+     */
+    private Question generateGenericFallbackQuestion(String jobRole, int questionNumber, int totalQuestions) {
+        log.info("Generating generic fallback question {} for role: {}", questionNumber, jobRole);
+
+        List<String> fallbackQuestions = List.of(
+                "Can you elaborate more on your experience with the technologies mentioned in your resume?",
+                "Tell me about a recent project where you had to overcome a significant technical challenge.",
+                "How do you stay current with industry trends and new technologies?",
+                "Describe a situation where you had to work with a difficult team member. How did you handle it?",
+                "What aspects of the " + jobRole + " role are you most excited about?",
+                "Can you walk me through your approach to debugging a complex issue?",
+                "How do you prioritize tasks when facing multiple deadlines?",
+                "What's something you've learned recently that you found particularly valuable?",
+                "How do you ensure code quality in your work?",
+                "Do you have any questions about the role or the team?"
+        );
+
+        // Select based on question number, cycling through the list
+        int index = (questionNumber - 1) % fallbackQuestions.size();
+        
+        Question question = new Question();
+        question.setQuestionText(fallbackQuestions.get(index));
+        question.setQuestionNumber(questionNumber);
+        question.setCategory(index % 2 == 0 ? "TECHNICAL" : "BEHAVIORAL");
+        question.setDifficulty("MEDIUM");
+
+        return question;
     }
 
     private List<Question> generateQuestions(Resume resume, JobRole jobRole, int numQuestions) {
@@ -476,5 +732,64 @@ public class OllamaService {
         }
 
         return questions;
+    }
+
+    /**
+     * Analyze a resume and provide feedback.
+     *
+     * @param resumeText the extracted text from the resume
+     * @return analysis result as a JSON string
+     */
+    public String analyzeResume(String resumeText) {
+        String prompt = buildResumeAnalysisPrompt(resumeText);
+
+        Map<String, Object> requestBody = new LinkedHashMap<>();
+        requestBody.put("model", model);
+        requestBody.put("format", "json");
+        requestBody.put("stream", false);
+
+        List<Map<String, String>> messages = new ArrayList<>();
+        Map<String, String> userMessage = new LinkedHashMap<>();
+        userMessage.put("role", "user");
+        userMessage.put("content", prompt);
+        messages.add(userMessage);
+
+        requestBody.put("messages", messages);
+
+        log.debug("Calling Ollama API for resume analysis");
+        ResponseEntity<String> response = restTemplate.postForEntity(apiUrl, requestBody, String.class);
+
+        if (response.getBody() == null) {
+            throw new RuntimeException("Empty response from Ollama API");
+        }
+
+        return extractContentFromResponse(response.getBody());
+    }
+
+    private String buildResumeAnalysisPrompt(String resumeText) {
+        String safeText = sanitizeResumeText(resumeText);
+        
+        return String.format("""
+                You are a career coach and resume expert. Analyze this resume and provide detailed feedback.
+                
+                Resume Content:
+                %s
+                
+                Return ONLY a valid JSON object with this exact structure, no other text:
+                {
+                  "score": 75,
+                  "strengths": ["strength 1", "strength 2"],
+                  "weaknesses": ["weakness 1", "weakness 2"],
+                  "suggestions": ["suggestion 1", "suggestion 2", "suggestion 3"],
+                  "overallFeedback": "2-3 sentence summary"
+                }
+                
+                Score criteria:
+                - 90-100: Exceptional, recruiter-ready
+                - 70-89: Good, minor improvements needed
+                - 50-69: Average, significant improvements needed
+                - Below 50: Needs major revisions
+                """,
+                safeText.substring(0, Math.min(safeText.length(), MAX_PROMPT_RESUME_LENGTH)));
     }
 }

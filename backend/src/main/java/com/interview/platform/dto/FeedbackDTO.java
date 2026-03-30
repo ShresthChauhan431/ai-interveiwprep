@@ -12,6 +12,7 @@ public class FeedbackDTO {
     private List<String> weaknesses;
     private List<String> recommendations;
     private String detailedAnalysis;
+    private List<QuestionAnswerDTO> questionAnswers;
 
     public FeedbackDTO() {
     }
@@ -63,5 +64,13 @@ public class FeedbackDTO {
 
     public void setDetailedAnalysis(String detailedAnalysis) {
         this.detailedAnalysis = detailedAnalysis;
+    }
+
+    public List<QuestionAnswerDTO> getQuestionAnswers() {
+        return questionAnswers;
+    }
+
+    public void setQuestionAnswers(List<QuestionAnswerDTO> questionAnswers) {
+        this.questionAnswers = questionAnswers;
     }
 }

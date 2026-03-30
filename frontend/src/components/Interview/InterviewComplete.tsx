@@ -414,6 +414,44 @@ const InterviewComplete: React.FC<InterviewCompleteProps> = ({
         </Card>
       )}
 
+      {/* ===== Question & Answer Details ===== */}
+      {feedback.questionAnswers && feedback.questionAnswers.length > 0 && (
+        <Accordion
+          defaultExpanded
+          elevation={0}
+          sx={{
+            mb: 3,
+            borderRadius: "12px !important",
+            border: "1px solid",
+            borderColor: "divider",
+            "&:before": { display: "none" },
+          }}
+        >
+          <AccordionSummary expandIcon={<ExpandMore />}>
+            <Typography fontWeight={600}>
+              Your Responses ({(feedback.questionAnswers || []).length} questions)
+            </Typography>
+          </AccordionSummary>
+          <AccordionDetails>
+            {(feedback.questionAnswers || []).map((qa, index) => (
+              <Box key={index} sx={{ mb: 3, pb: 3, borderBottom: index < (feedback.questionAnswers?.length || 0) - 1 ? '1px solid' : 'none', borderColor: 'divider' }}>
+                <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1, color: 'primary.main' }}>
+                  Q{index + 1}: {qa.questionText}
+                </Typography>
+                <Box sx={{ pl: 2 }}>
+                  <Typography variant="body2" fontWeight={500} color="text.secondary" sx={{ mb: 0.5 }}>
+                    Your Answer:
+                  </Typography>
+                  <Typography variant="body2" sx={{ mb: 2, fontStyle: qa.userAnswer === 'No response recorded' ? 'italic' : 'normal', color: qa.userAnswer === 'No response recorded' ? 'text.disabled' : 'text.primary' }}>
+                    {qa.userAnswer}
+                  </Typography>
+                </Box>
+              </Box>
+            ))}
+          </AccordionDetails>
+        </Accordion>
+      )}
+
       {/* ===== Action Buttons ===== */}
       <Box
         sx={{
@@ -426,7 +464,7 @@ const InterviewComplete: React.FC<InterviewCompleteProps> = ({
         <Button
           variant="outlined"
           startIcon={<Visibility />}
-          onClick={() => navigate(`/interview/${interviewId}/feedback`)}
+          onClick={() => navigate(`/interview/${interviewId}/review`)}
         >
           View Detailed Feedback
         </Button>

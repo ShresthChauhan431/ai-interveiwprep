@@ -8,6 +8,7 @@ import {
   ConfirmUploadResponse,
   Response as InterviewResponse,
   Feedback,
+  NextQuestionResponse,
 } from "../types";
 
 // ============================================================
@@ -509,7 +510,63 @@ export const interviewService = {
   },
 
   // ════════════════════════════════════════════════════════════════
-  // 9. Delete Interview
+  // 9. Submit Answer and Get Next Question (Hybrid Mode)
+  // ════════════════════════════════════════════════════════════════
+
+  /**
+   * Submit an answer and get the next question (hybrid interview flow).
+   * POST /api/interviews/{interviewId}/questions/{questionId}/answer
+   *
+   * In hybrid mode, questions after the pre-generated zone are generated
+   * dynamically based on all previous Q&A pairs. This method:
+   * 1. Records the user's answer for the current question
+   * 2. Generates the next question if in the dynamic zone
+   * 3. Returns the next question with TTS audio, or completion status
+   *
+   * @param interviewId       - The interview ID
+   * @param questionId        - The question being answered
+   * @param answerTranscript  - The transcribed answer text
+   * @param answerVideoUrl    - Optional URL to the recorded video
+   * @param durationSeconds   - Optional duration of the answer in seconds
+   * @returns NextQuestionResponse with next question or completion status
+   */
+  async submitAnswerAndGetNext(
+    interviewId: number,
+    questionId: number,
+    answerTranscript: string,
+    answerVideoUrl?: string,
+    durationSeconds?: number,
+  ): Promise<NextQuestionResponse> {
+    try {
+      const response = await longRunningApi.post<NextQuestionResponse>(
+        `/api/interviews/${interviewId}/questions/${questionId}/answer`,
+        {
+          answerTranscript,
+          answerVideoUrl,
+          durationSeconds,
+        },
+      );
+      return response.data;
+    } catch (error: any) {
+      // Provide actionable error messages
+      if (
+        error?.status === 0 &&
+        (error?.message?.includes("timeout") ||
+          error?.message?.includes("timed out"))
+      ) {
+        throw new Error(
+          "Generating the next question is taking longer than expected. " +
+          "This is normal for adaptive interviews. Please wait and try again.",
+        );
+      }
+      throw error?.message
+        ? error
+        : new Error("Failed to submit answer and get next question.");
+    }
+  },
+
+  // ════════════════════════════════════════════════════════════════
+  // 10. Delete Interview
   // ════════════════════════════════════════════════════════════════
 
   /**

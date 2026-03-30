@@ -1,10 +1,35 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Box, Typography, Paper, Chip, Button } from '@mui/material';
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import VolumeOffIcon from '@mui/icons-material/VolumeOff';
 import MicIcon from '@mui/icons-material/Mic';
 
 import api from '../../services/api.service';
+
+const RobotIcon: React.FC<{ size?: number }> = ({ size = 100 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 120 120"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+  >
+    <rect x="30" y="20" width="60" height="50" rx="8" fill="#4A90D9" />
+    <circle cx="45" cy="40" r="8" fill="#00FF88" />
+    <circle cx="75" cy="40" r="8" fill="#00FF88" />
+    <rect x="45" y="52" width="30" height="8" rx="4" fill="#1a1a2e" />
+    <rect x="57" y="8" width="6" height="15" fill="#4A90D9" />
+    <circle cx="60" cy="8" r="5" fill="#FF6B6B" />
+    <rect x="20" y="35" width="12" height="20" rx="4" fill="#3A7BC8" />
+    <rect x="88" y="35" width="12" height="20" rx="4" fill="#3A7BC8" />
+    <rect x="50" y="70" width="20" height="8" fill="#2D5A8A" />
+    <rect x="25" y="78" width="70" height="35" rx="6" fill="#4A90D9" />
+    <rect x="35" y="85" width="50" height="20" rx="4" fill="#3A7BC8" />
+    <circle cx="50" cy="95" r="5" fill="#00FF88" />
+    <circle cx="70" cy="95" r="5" fill="#FFD93D" />
+    <circle cx="60" cy="105" r="4" fill="#FF6B6B" />
+  </svg>
+);
 
 interface QuestionPresenterProps {
   questionText: string;
@@ -21,32 +46,89 @@ const QuestionPresenter: React.FC<QuestionPresenterProps> = ({
   totalQuestions,
   onAudioComplete,
 }) => {
-  const audioRef = useRef<HTMLAudioElement | null>(null); // FIX: Ref to HTML audio element for playback control
-  const animationRef = useRef<ReturnType<typeof setInterval> | null>(null); // FIX: Ref to waveform animation interval
-  const [isPlaying, setIsPlaying] = useState(false); // FIX: Track audio playback state
-  const [audioFailed, setAudioFailed] = useState(false); // FIX: Track audio load/play failure state
-  const [waveValues, setWaveValues] = useState<number[]>(Array(14).fill(4)); // FIX: Waveform bar heights for animation
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const animationRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const synthRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [audioFailed, setAudioFailed] = useState(false);
+  const [useBrowserTTS, setUseBrowserTTS] = useState(false);
+  const [waveValues, setWaveValues] = useState<number[]>(Array(14).fill(4));
 
-  const startWave = () => { // FIX: Start waveform animation when audio is playing
+  const startWave = () => {
     animationRef.current = setInterval(() => {
-      setWaveValues(Array(14).fill(0).map(() => Math.floor(Math.random() * 28) + 4)); // FIX: Randomize bar heights for visual effect
+      setWaveValues(Array(14).fill(0).map(() => Math.floor(Math.random() * 28) + 4));
     }, 100);
   };
 
-  const stopWave = () => { // FIX: Stop waveform animation and reset bars to idle state
+  const stopWave = () => {
     if (animationRef.current) clearInterval(animationRef.current);
-    setWaveValues(Array(14).fill(4)); // FIX: Reset all bars to minimal height
+    setWaveValues(Array(14).fill(4));
   };
 
+  const stopBrowserTTS = useCallback(() => {
+    if (window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+    synthRef.current = null;
+  }, []);
+
+  const speakWithBrowserTTS = useCallback((text: string) => {
+    stopBrowserTTS();
+    
+    if (!window.speechSynthesis) {
+      console.warn("Browser speech synthesis not supported");
+      onAudioComplete?.();
+      return;
+    }
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 0.9;
+    utterance.pitch = 1;
+    utterance.lang = 'en-US';
+    
+    const voices = window.speechSynthesis.getVoices();
+    const englishVoice = voices.find(v => v.lang.startsWith('en') && v.name.includes('Female')) 
+      || voices.find(v => v.lang.startsWith('en'));
+    if (englishVoice) {
+      utterance.voice = englishVoice;
+    }
+
+    utterance.onstart = () => {
+      setIsPlaying(true);
+      startWave();
+    };
+
+    utterance.onend = () => {
+      setIsPlaying(false);
+      stopWave();
+      onAudioComplete?.();
+    };
+
+    utterance.onerror = (e) => {
+      console.error("Browser TTS error:", e);
+      setIsPlaying(false);
+      setAudioFailed(true);
+      stopWave();
+      onAudioComplete?.();
+    };
+
+    synthRef.current = utterance;
+    window.speechSynthesis.speak(utterance);
+  }, [onAudioComplete, stopBrowserTTS]);
+
   useEffect(() => {
-    setAudioFailed(false); // FIX: Reset failure state when question changes
-    setIsPlaying(false); // FIX: Reset playing state when question changes
-    stopWave(); // FIX: Stop any active animation when question changes
+    setAudioFailed(false);
+    setIsPlaying(false);
+    setUseBrowserTTS(false);
+    stopWave();
+    stopBrowserTTS();
 
     if (!audioUrl) {
-      // FIX: No audio — auto-complete after short delay so user can read the question
-      const t = setTimeout(() => onAudioComplete?.(), 1500);
-      return () => clearTimeout(t);
+      const t = setTimeout(() => speakWithBrowserTTS(questionText), 500);
+      return () => {
+        clearTimeout(t);
+        stopBrowserTTS();
+      };
     }
 
     let objectUrl = '';
@@ -55,44 +137,38 @@ const QuestionPresenter: React.FC<QuestionPresenterProps> = ({
 
     const fetchAndPlayAudio = async () => {
       try {
-        // FIX: Fetch the audio file using the API service to ensure the JWT token is attached.
-        // Direct <audio src={audioUrl}> fails with 401 Unauthorized because FileController requires auth.
         const response = await api.get(audioUrl, { responseType: 'blob' });
 
         objectUrl = URL.createObjectURL(response.data);
         audio = new Audio(objectUrl);
         audioRef.current = audio;
 
-        audio.onplay = () => { setIsPlaying(true); startWave(); }; // FIX: Start animation when audio begins playing
-        audio.onended = () => { setIsPlaying(false); stopWave(); onAudioComplete?.(); }; // FIX: Stop animation and notify parent when audio ends
+        audio.onplay = () => { setIsPlaying(true); startWave(); };
+        audio.onended = () => { setIsPlaying(false); stopWave(); onAudioComplete?.(); };
         audio.onerror = () => {
-          // FIX: Graceful fallback — never block interview if audio fails
           setIsPlaying(false);
           setAudioFailed(true);
           stopWave();
-          onAudioComplete?.(); // FIX: Still fire completion so recorder can appear
+          speakWithBrowserTTS(questionText);
         };
 
-        timeoutId = setTimeout(() => { // FIX: Slight delay before autoplay to let UI mount
+        timeoutId = setTimeout(() => {
           audio?.play().catch(() => {
-            // FIX: Autoplay blocked by browser — show manual play button instead of failing
-            setAudioFailed(false);
-            setIsPlaying(false);
+            setAudioFailed(true);
+            speakWithBrowserTTS(questionText);
           });
         }, 400);
 
       } catch (error) {
         console.error("Failed to fetch audio file:", error);
-        setIsPlaying(false);
         setAudioFailed(true);
-        stopWave();
-        onAudioComplete?.();
+        speakWithBrowserTTS(questionText);
       }
     };
 
     fetchAndPlayAudio();
 
-    return () => { // FIX: Cleanup on unmount — stop playback and animation
+    return () => {
       clearTimeout(timeoutId);
       if (audio) {
         audio.pause();
@@ -101,13 +177,33 @@ const QuestionPresenter: React.FC<QuestionPresenterProps> = ({
       if (objectUrl) {
         URL.revokeObjectURL(objectUrl);
       }
+      stopBrowserTTS();
       stopWave();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [audioUrl, questionText]);
+  }, [audioUrl, questionText, onAudioComplete, speakWithBrowserTTS, stopBrowserTTS]);
 
-  const handleManualPlay = () => { // FIX: Manual play handler for when browser blocks autoplay
-    audioRef.current?.play().catch(() => setAudioFailed(true));
+  const handleManualPlay = () => {
+    if (useBrowserTTS) {
+      speakWithBrowserTTS(questionText);
+    } else if (audioRef.current) {
+      audioRef.current.play().catch(() => {
+        setAudioFailed(true);
+        speakWithBrowserTTS(questionText);
+      });
+    }
+  };
+
+  const getStatusText = () => {
+    if (isPlaying) {
+      return useBrowserTTS ? 'Speaking via browser TTS...' : 'Interviewer is speaking...';
+    }
+    if (audioFailed) {
+      return 'Audio unavailable — using browser TTS';
+    }
+    if (audioUrl) {
+      return 'Click play to hear the question';
+    }
+    return 'Click play to hear the question';
   };
 
   return (
@@ -120,7 +216,7 @@ const QuestionPresenter: React.FC<QuestionPresenterProps> = ({
       transition: 'border-color 0.3s ease',
       position: 'relative',
     }}>
-      {/* FIX: Question counter chip — shows current position in interview */}
+      {/* Question counter chip — shows current position in interview */}
       <Chip
         label={`Question ${questionNumber} of ${totalQuestions}`}
         size="small"
@@ -132,7 +228,12 @@ const QuestionPresenter: React.FC<QuestionPresenterProps> = ({
         }}
       />
 
-      {/* FIX: Animated waveform — visual indicator of TTS audio playback */}
+      {/* Robot Avatar - Always displayed */}
+      <Box sx={{ mb: 1 }}>
+        <RobotIcon size={100} />
+      </Box>
+
+      {/* Animated waveform — visual indicator of TTS audio playback */}
       <Box sx={{ display: 'flex', alignItems: 'center', gap: '3px', height: 48, mt: 2 }}>
         {waveValues.map((h, i) => (
           <Box key={i} sx={{
@@ -144,35 +245,29 @@ const QuestionPresenter: React.FC<QuestionPresenterProps> = ({
         ))}
       </Box>
 
-      {/* FIX: Status row — shows current audio playback state to user */}
+      {/* Status row — shows current audio playback state to user */}
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
         {isPlaying
-          ? <VolumeUpIcon sx={{ color: '#4fc3f7', fontSize: 20 }} /> // FIX: Active speaker icon when playing
-          : <VolumeOffIcon sx={{ color: 'rgba(255,255,255,0.3)', fontSize: 20 }} /> // FIX: Muted icon when not playing
+          ? <VolumeUpIcon sx={{ color: '#4fc3f7', fontSize: 20 }} />
+          : <VolumeOffIcon sx={{ color: 'rgba(255,255,255,0.3)', fontSize: 20 }} />
         }
         <Typography variant="caption" sx={{
-          color: isPlaying ? '#4fc3f7' : 'rgba(255,255,255,0.4)' // FIX: Text color matches playback state
+          color: isPlaying ? '#4fc3f7' : 'rgba(255,255,255,0.4)'
         }}>
-          {isPlaying
-            ? 'Interviewer is speaking...' // FIX: Status text during audio playback
-            : audioFailed
-              ? 'Audio unavailable — read the question below' // FIX: Fallback message when audio fails
-              : audioUrl
-                ? 'Click play to hear the question' // FIX: Prompt when audio is available but not playing
-                : 'Read the question below'} {/* FIX: Prompt when no audio URL exists */}
+          {getStatusText()}
         </Typography>
       </Box>
 
-      {/* FIX: Manual play button — shown when autoplay is blocked by browser policy */}
-      {audioUrl && !isPlaying && !audioFailed && (
+      {/* Manual play button */}
+      {(!isPlaying) && (
         <Button size="small" variant="outlined"
-          onClick={handleManualPlay} // FIX: Trigger manual audio playback on click
+          onClick={handleManualPlay}
           startIcon={<VolumeUpIcon />}
           sx={{
             color: 'white', borderColor: 'rgba(255,255,255,0.3)',
             '&:hover': { borderColor: '#4fc3f7', color: '#4fc3f7' }
           }}>
-          Play Question Audio
+          {audioFailed ? 'Play with Browser TTS' : 'Play Question Audio'}
         </Button>
       )}
 

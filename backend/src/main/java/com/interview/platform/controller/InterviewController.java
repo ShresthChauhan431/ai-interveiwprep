@@ -4,8 +4,11 @@ import com.interview.platform.dto.*;
 import com.interview.platform.model.Feedback;
 import com.interview.platform.model.Interview;
 import com.interview.platform.model.InterviewStatus;
+import com.interview.platform.model.Question;
+import com.interview.platform.model.Response;
 import com.interview.platform.repository.FeedbackRepository;
 import com.interview.platform.repository.InterviewRepository;
+import com.interview.platform.repository.ResponseRepository;
 import com.interview.platform.service.InterviewService;
 import com.interview.platform.service.SseEmitterService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -57,15 +60,18 @@ public class InterviewController {
     private final InterviewService interviewService;
     private final FeedbackRepository feedbackRepository;
     private final InterviewRepository interviewRepository;
+    private final ResponseRepository responseRepository;
     private final SseEmitterService sseEmitterService;
 
     public InterviewController(InterviewService interviewService,
             FeedbackRepository feedbackRepository,
             InterviewRepository interviewRepository,
+            ResponseRepository responseRepository,
             SseEmitterService sseEmitterService) {
         this.interviewService = interviewService;
         this.feedbackRepository = feedbackRepository;
         this.interviewRepository = interviewRepository;
+        this.responseRepository = responseRepository;
         this.sseEmitterService = sseEmitterService;
     }
 
@@ -354,6 +360,47 @@ public class InterviewController {
     }
 
     // ════════════════════════════════════════════════════════════════
+    // 6c. POST /api/interviews/{interviewId}/questions/{questionId}/answer
+    // ════════════════════════════════════════════════════════════════
+
+    /**
+     * Submit an answer to a question and get the next question (hybrid mode).
+     *
+     * <p>This endpoint supports the hybrid interview flow where questions
+     * in the DYNAMIC ZONE are generated adaptively based on previous answers.
+     * It records the user's answer, generates the next question if needed,
+     * and returns it with TTS audio.</p>
+     *
+     * <h3>Response:</h3>
+     * <ul>
+     *   <li>If more questions remain: returns the next question details</li>
+     *   <li>If interview is complete: returns {@code interviewComplete: true}</li>
+     * </ul>
+     *
+     * @param interviewId the interview ID
+     * @param questionId  the question being answered
+     * @param submission  the answer submission DTO
+     * @param httpRequest the HTTP request (for user ID extraction)
+     * @return NextQuestionResponseDTO with next question or completion status
+     */
+    @PostMapping("/{interviewId}/questions/{questionId}/answer")
+    public ResponseEntity<NextQuestionResponseDTO> submitAnswerAndGetNext(
+            @PathVariable Long interviewId,
+            @PathVariable Long questionId,
+            @Valid @RequestBody AnswerSubmissionDTO submission,
+            HttpServletRequest httpRequest) {
+
+        Long userId = getUserIdFromRequest(httpRequest);
+        log.info("Submit answer and get next — user: {}, interview: {}, question: {}",
+                userId, interviewId, questionId);
+
+        NextQuestionResponseDTO response = interviewService.submitAnswerAndGetNext(
+                userId, interviewId, questionId, submission);
+
+        return ResponseEntity.ok(response);
+    }
+
+    // ════════════════════════════════════════════════════════════════
     // 7. GET /api/interviews/history
     // ════════════════════════════════════════════════════════════════
 
@@ -418,6 +465,23 @@ public class InterviewController {
             feedbackResponse.put("detailedAnalysis", feedback.getDetailedAnalysis());
             feedbackResponse.put("generatedAt", feedback.getGeneratedAt());
 
+            // Fetch Q&A pairs for detailed view
+            List<Response> responses = responseRepository.findByInterviewIdOrderByQuestionId(interviewId);
+            List<QuestionAnswerDTO> questionAnswers = new ArrayList<>();
+            for (Response response : responses) {
+                Question question = response.getQuestion();
+                String userAnswer = response.getTranscription();
+                if (userAnswer == null || userAnswer.isBlank()) {
+                    userAnswer = "No response recorded";
+                }
+                questionAnswers.add(new QuestionAnswerDTO(
+                    question.getQuestionText(),
+                    userAnswer,
+                    null
+                ));
+            }
+            feedbackResponse.put("questionAnswers", questionAnswers);
+
             return ResponseEntity.ok(feedbackResponse);
         }
 
@@ -471,16 +535,55 @@ public class InterviewController {
      */
     @GetMapping(value = "/{interviewId}/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter streamEvents(@PathVariable Long interviewId,
+            @RequestParam(required = false) String ticket,
+            HttpServletRequest httpRequest) {
+        Long userId;
+        
+        // If ticket provided, validate and extract userId from ticket
+        if (ticket != null && !ticket.isBlank()) {
+            Long[] validated = sseEmitterService.validateAndConsumeTicket(ticket);
+            if (validated == null) {
+                throw new RuntimeException("Invalid or expired SSE ticket");
+            }
+            userId = validated[1];
+            // Ensure the ticket was for this interview
+            if (!validated[0].equals(interviewId)) {
+                throw new RuntimeException("Ticket does not match interview ID");
+            }
+        } else {
+            // Fallback: use authenticated user from request
+            userId = getUserIdFromRequest(httpRequest);
+            // Validate ownership
+            interviewRepository.findByIdAndUserId(interviewId, userId)
+                    .orElseThrow(() -> new RuntimeException(
+                            "Interview not found or does not belong to user: " + interviewId));
+        }
+
+        log.info("SSE connection opened: interviewId={}, userId={}", interviewId, userId);
+        return sseEmitterService.register(interviewId, userId);
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // 9b. POST /api/interviews/{interviewId}/sse-ticket
+    // ════════════════════════════════════════════════════════════════
+
+    /**
+     * Generate a short-lived, single-use ticket for SSE connection.
+     * This replaces passing JWT in query parameters to avoid token leakage.
+     */
+    @PostMapping("/{interviewId}/sse-ticket")
+    public ResponseEntity<Map<String, String>> getSseTicket(@PathVariable Long interviewId,
             HttpServletRequest httpRequest) {
         Long userId = getUserIdFromRequest(httpRequest);
 
-        // Validate ownership
         interviewRepository.findByIdAndUserId(interviewId, userId)
                 .orElseThrow(() -> new RuntimeException(
                         "Interview not found or does not belong to user: " + interviewId));
 
-        log.info("SSE connection opened: interviewId={}, userId={}", interviewId, userId);
-        return sseEmitterService.register(interviewId, userId);
+        String ticket = sseEmitterService.generateTicket(interviewId, userId);
+        log.info("SSE ticket generated: interviewId={}, userId={}", interviewId, userId);
+
+        return ResponseEntity.ok(Map.of("ticket", ticket));
     }
 
     // ════════════════════════════════════════════════════════════════

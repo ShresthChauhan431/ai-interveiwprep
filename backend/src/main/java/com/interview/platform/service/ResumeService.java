@@ -1,5 +1,9 @@
 package com.interview.platform.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.interview.platform.dto.ResumeAnalysisDTO;
 import com.interview.platform.dto.ResumeResponse;
 import com.interview.platform.exception.UserNotFoundException;
 import com.interview.platform.model.Resume;
@@ -18,6 +22,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -50,6 +55,8 @@ public class ResumeService {
     private final ResumeRepository resumeRepository;
     private final UserRepository userRepository;
     private final VideoStorageService videoStorageService;
+    private final OllamaService ollamaService;
+    private final ObjectMapper objectMapper;
 
     private static final List<String> ALLOWED_CONTENT_TYPES = List.of(
             "application/pdf",
@@ -70,10 +77,12 @@ public class ResumeService {
     private static final byte[] DOCX_MAGIC = { 0x50, 0x4B };
 
     public ResumeService(ResumeRepository resumeRepository, UserRepository userRepository,
-            VideoStorageService videoStorageService) {
+            VideoStorageService videoStorageService, OllamaService ollamaService, ObjectMapper objectMapper) {
         this.resumeRepository = resumeRepository;
         this.userRepository = userRepository;
         this.videoStorageService = videoStorageService;
+        this.ollamaService = ollamaService;
+        this.objectMapper = objectMapper;
     }
 
     @Transactional
@@ -368,5 +377,61 @@ public class ResumeService {
                 .fileUrl(resume.getFileUrl())
                 .uploadedAt(resume.getUploadedAt())
                 .build();
+    }
+
+    /**
+     * Analyze the user's latest resume and provide feedback.
+     *
+     * @param userId the authenticated user's ID
+     * @return ResumeAnalysisDTO with feedback, strengths, weaknesses, and suggestions
+     */
+    public ResumeAnalysisDTO analyzeResume(Long userId) {
+        log.info("Analyzing resume for user: {}", userId);
+
+        Resume resume = resumeRepository.findLatestByUserId(userId)
+                .orElseThrow(() -> new com.interview.platform.exception.ResourceNotFoundException(
+                        "No resume found for user. Please upload a resume first."));
+
+        String resumeText = resume.getExtractedText();
+        if (resumeText == null || resumeText.isBlank()) {
+            throw new RuntimeException("Resume has no text to analyze. Please upload a resume with content.");
+        }
+
+        try {
+            String jsonResponse = ollamaService.analyzeResume(resumeText);
+            return parseAnalysisResponse(jsonResponse, resume.getFileName());
+        } catch (Exception e) {
+            log.error("Failed to analyze resume for user: {}", userId, e);
+            throw new RuntimeException("Failed to analyze resume: " + e.getMessage(), e);
+        }
+    }
+
+    private ResumeAnalysisDTO parseAnalysisResponse(String jsonResponse, String fileName) {
+        try {
+            JsonNode root = objectMapper.readTree(jsonResponse);
+            
+            int score = root.has("score") ? root.get("score").asInt() : 50;
+            String overallFeedback = root.has("overallFeedback") ? root.get("overallFeedback").asText() : "";
+            
+            List<String> strengths = new ArrayList<>();
+            if (root.has("strengths") && root.get("strengths").isArray()) {
+                root.get("strengths").forEach(node -> strengths.add(node.asText()));
+            }
+            
+            List<String> weaknesses = new ArrayList<>();
+            if (root.has("weaknesses") && root.get("weaknesses").isArray()) {
+                root.get("weaknesses").forEach(node -> weaknesses.add(node.asText()));
+            }
+            
+            List<String> suggestions = new ArrayList<>();
+            if (root.has("suggestions") && root.get("suggestions").isArray()) {
+                root.get("suggestions").forEach(node -> suggestions.add(node.asText()));
+            }
+
+            return new ResumeAnalysisDTO(score, strengths, weaknesses, suggestions, overallFeedback, fileName);
+        } catch (JsonProcessingException e) {
+            log.error("Failed to parse resume analysis response", e);
+            throw new RuntimeException("Failed to parse analysis result", e);
+        }
     }
 }

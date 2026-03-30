@@ -16,14 +16,14 @@ The **AI Interview Preparation Platform** is a full-stack application that simul
 | Service | Provider | Purpose |
 |---------|----------|---------|
 | **Question Generation & Feedback** | [Ollama](https://ollama.com/) (Llama 3) | Context-aware question generation from resumes; structured interview feedback |
-| **Avatar Videos** | [D-ID](https://www.d-id.com/) | Lifelike AI avatar that "asks" each question on camera |
-| **Text-to-Speech** | [ElevenLabs](https://elevenlabs.io/) | Natural-sounding voice audio for avatar videos |
+| **Text-to-Speech (Primary)** | [ElevenLabs](https://elevenlabs.io/) | Natural-sounding voice audio for interview questions |
+| **Avatar Videos (Fallback)** | [D-ID](https://www.d-id.com/) | Lifelike AI avatar that "asks" each question on camera (Available fallback alternative) |
 | **Speech-to-Text** | [AssemblyAI](https://www.assemblyai.com/) | Transcription of candidate video responses for AI analysis |
 
 ## ✨ Key Features
 
 - **🧠 Intelligent Questioning** — Tailored questions based on job roles and parsed resume content via Llama 3.
-- **🗣️ Realistic AI Avatars** — Interactive interviews with lifelike D-ID avatars speaking with ElevenLabs voices.
+- **🗣️ AI Voice & Avatars** — Interactive interviews powered primarily by ElevenLabs TTS, with lifelike D-ID avatar videos available as an alternative option.
 - **🎥 Video Response Recording** — In-browser video/audio recording with auto-start countdown, camera preview, and progress tracking.
 - **📊 Comprehensive Feedback** — AI-generated performance analytics with scores, strengths, weaknesses, and recommendations.
 - **📄 Resume Parsing** — Automatic text extraction from PDF (Apache PDFBox) and DOCX (Apache POI) resumes.
@@ -152,6 +152,8 @@ open http://localhost:3002
 
 Using Docker Compose (recommended):
 
+Ensure **Docker Desktop** is currently running on your machine, then run:
+
 ```bash
 docker-compose up -d
 ```
@@ -194,7 +196,7 @@ The backend starts on **http://localhost:8081**. Flyway automatically runs datab
 
 ```bash
 cd frontend
-npm install
+npm install --legacy-peer-deps
 npm start
 ```
 
@@ -232,11 +234,11 @@ The following external API keys must be configured in `backend/.env`:
 3. Select Job Role + Start Interview
        │  ← Ollama generates tailored questions
        │  ← ElevenLabs converts questions to speech
-       │  ← D-ID generates avatar videos
+       │  ← D-ID generates avatar videos (if enabled as fallback)
        │  ← SSE streams progress to frontend
        │
 4. Interview Session (IN_PROGRESS)
-       │  ← Watch avatar ask question
+       │  ← Listen to AI voice (or watch avatar ask question)
        │  ← Record video response (MediaRecorder)
        │  ← Upload video → trigger transcription (AssemblyAI)
        │

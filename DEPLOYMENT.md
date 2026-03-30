@@ -34,7 +34,7 @@ Required (backend fails to start if missing):
 
 - `DB_USER`, `DB_PASSWORD` — MySQL credentials
 - `JWT_SECRET` — e.g. `openssl rand -base64 64`
-- `OPENAI_API_KEY`, `ELEVENLABS_API_KEY`, `DID_API_KEY`, `ASSEMBLYAI_API_KEY` — API keys
+- `ELEVENLABS_API_KEY`, `DID_API_KEY` (if fallback used), `ASSEMBLYAI_API_KEY` — API keys
 
 Optional (with defaults):
 

@@ -46,8 +46,8 @@ That's it! The application will open at http://localhost:3002
 - ✅ Ollama (AI question generation)
 
 ### Required API Keys
-- ✅ ElevenLabs — https://elevenlabs.io/
-- ✅ D-ID — https://www.d-id.com/
+- ✅ ElevenLabs (Primary TTS) — https://elevenlabs.io/
+- ✅ D-ID (Fallback Avatar) — https://www.d-id.com/
 - ✅ AssemblyAI — https://www.assemblyai.com/
 
 ### Required Environment Variables (No Defaults — Backend Fails Fast)
@@ -115,7 +115,8 @@ echo "CORS_ALLOWED_ORIGINS=http://localhost:3002" >> backend/.env
 ### Backend won't start (other reasons)
 
 ```bash
-# Check if MySQL is running
+# Check if MySQL is running natively or via Docker Desktop
+docker-compose ps
 mysql -u root -p -e "SELECT 1"
 
 # Check if port 8081 is already in use
@@ -134,7 +135,7 @@ cat backend/.env
 # Reinstall dependencies
 cd frontend
 rm -rf node_modules package-lock.json
-npm install
+npm install --legacy-peer-deps
 ```
 
 ### CORS errors in the browser
@@ -163,7 +164,7 @@ localStorage). This means:
 1. **Register**: Create an account at http://localhost:3002
 2. **Upload Resume**: Go to Dashboard → Upload PDF or DOCX (max 5 MB)
 3. **Start Interview**: Select resume + job role → Start
-4. **Wait**: Avatar generation takes 30–60 seconds
+4. **Wait**: Audio and/or avatar generation takes a few moments
 5. **Answer**: Record video responses (up to 3 min each, auto-stops at limit)
 6. **Complete**: Finish interview → View AI-generated feedback
 

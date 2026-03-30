@@ -1,5 +1,5 @@
 import api from './api.service';
-import { Resume } from '../types';
+import { Resume, ResumeAnalysis } from '../types';
 
 // ============================================================
 // Video / Resume API
@@ -24,6 +24,11 @@ export const videoService = {
 
     async getResumeById(id: number): Promise<Resume> {
         const response = await api.get<Resume>(`/api/resumes/${id}`);
+        return response.data;
+    },
+
+    async analyzeResume(): Promise<ResumeAnalysis> {
+        const response = await api.get<ResumeAnalysis>('/api/resumes/analyze');
         return response.data;
     },
 

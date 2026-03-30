@@ -52,6 +52,13 @@ public class Interview {
     @Column(name = "completed_at")
     private LocalDateTime completedAt;
 
+    /**
+     * Total number of questions for this interview.
+     * Used in hybrid mode to track how many questions should be generated in total.
+     */
+    @Column(name = "total_questions")
+    private Integer totalQuestions;
+
     @OneToMany(mappedBy = "interview", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<Question> questions = new ArrayList<>();
 
@@ -227,5 +234,13 @@ public class Interview {
 
     public void setFeedback(Feedback feedback) {
         this.feedback = feedback;
+    }
+
+    public Integer getTotalQuestions() {
+        return totalQuestions;
+    }
+
+    public void setTotalQuestions(Integer totalQuestions) {
+        this.totalQuestions = totalQuestions;
     }
 }
