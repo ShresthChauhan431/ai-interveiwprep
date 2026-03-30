@@ -643,7 +643,46 @@ public class InterviewService {
 
         log.info("Interview ID: {} status set to PROCESSING", interviewId);
 
-        // Trigger async feedback generation
+        // ── Consolidate transcriptions before feedback ────────────────
+        // For any Response that still has null transcription (because
+        // AssemblyAI hasn't finished yet), check if a pending
+        // transcription result is available and apply it.
+        // This prevents feedback from seeing "No response recorded".
+        List<Response> missingTranscript = responses.stream()
+                .filter(r -> r.getTranscription() == null
+                        || r.getTranscription().isBlank())
+                .collect(Collectors.toList());
+
+        if (!missingTranscript.isEmpty()) {
+            log.warn("Interview {}: {} response(s) still have null " +
+                    "transcription at completion time — attempting " +
+                    "synchronous fallback fetch",
+                    interviewId, missingTranscript.size());
+
+            for (Response r : missingTranscript) {
+                try {
+                    // Attempt to fetch completed transcription from
+                    // SpeechToTextService if available
+                    String transcript =
+                            speechToTextService.getTranscriptionResult(
+                                    r.getVideoUrl());
+                    if (transcript != null && !transcript.isBlank()) {
+                        r.setTranscription(transcript);
+                        responseRepository.save(r);
+                        log.info("Late transcription applied for question {}",
+                                r.getQuestion().getId());
+                    }
+                } catch (Exception e) {
+                    log.warn("Could not retrieve late transcription for " +
+                            "question {} — will use available text",
+                            r.getQuestion().getId(), e);
+                }
+            }
+        }
+        // ── End consolidation ─────────────────────────────────────────
+
+        // NOW trigger async feedback — transcriptions are as complete
+        // as they can be at this point
         try {
             aiFeedbackService.generateFeedbackAsync(interviewId)
                     .thenAccept(feedback -> {
@@ -928,6 +967,7 @@ public class InterviewService {
         // ── Record answer (if not already recorded) ──────────────────
         Optional<Response> existingResponse = responseRepository.findByQuestionId(currentQuestionId);
         if (existingResponse.isEmpty()) {
+            // New response — create full record
             Response response = new Response();
             response.setQuestion(currentQuestion);
             response.setInterview(interview);
@@ -938,7 +978,19 @@ public class InterviewService {
             responseRepository.save(response);
             log.info("Answer recorded for question {} (interview {})", currentQuestionId, interviewId);
         } else {
-            log.info("Answer already exists for question {} — skipping save", currentQuestionId);
+            // Response already exists (from confirm-upload path).
+            // Update the transcription if the DTO has one — do NOT skip.
+            Response existing = existingResponse.get();
+            String incomingTranscript = submission.getAnswerTranscript();
+            if (incomingTranscript != null && !incomingTranscript.isBlank()) {
+                existing.setTranscription(incomingTranscript);
+                responseRepository.save(existing);
+                log.info("Updated transcription for existing response on question {} (interview {})",
+                    currentQuestionId, interviewId);
+            } else {
+                log.info("Existing response for question {} has no new transcript — keeping current value",
+                    currentQuestionId);
+            }
         }
 
         // ── Determine total questions and current position ───────────

@@ -48,16 +48,16 @@ public class Response {
 
     public Response(Long id, Question question, Interview interview, User user, String videoUrl, String transcription,
             Double transcriptionConfidence, Integer videoDuration, LocalDateTime respondedAt) {
-        this.id = id;
-        this.question = question;
-        this.interview = interview;
-        this.user = user;
-        this.videoUrl = videoUrl;
-        this.transcription = transcription;
-        this.transcriptionConfidence = transcriptionConfidence;
-        this.videoDuration = videoDuration;
-        this.respondedAt = respondedAt;
-    }
+                this.id = id;
+                this.question = question;
+                this.interview = interview;
+                this.user = user;
+                this.videoUrl = videoUrl;
+                this.transcription = transcription;
+                this.transcriptionConfidence = transcriptionConfidence;
+                this.videoDuration = videoDuration;
+                this.respondedAt = respondedAt;
+            }
 
     @PrePersist
     protected void onCreate() {
