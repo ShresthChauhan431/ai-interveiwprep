@@ -39,9 +39,13 @@ interface InterviewStartProps {
 // InterviewStart Component
 // ============================================================
 
+// Difficulty level options
+type DifficultyLevel = "AUTO" | "EASY" | "MEDIUM" | "HARD";
+
 const InterviewStart: React.FC<InterviewStartProps> = ({ onStart }) => {
   const [selectedJobRole, setSelectedJobRole] = useState<number | null>(null);
   const [numQuestions, setNumQuestions] = useState<number>(0); // 0 means "Default"
+  const [difficulty, setDifficulty] = useState<DifficultyLevel>("AUTO"); // Difficulty selection
   const [resumeId, setResumeId] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [hasResume, setHasResume] = useState(false);
@@ -138,6 +142,7 @@ const InterviewStart: React.FC<InterviewStartProps> = ({ onStart }) => {
         resumeId,
         selectedJobRole,
         numQuestions === 0 ? undefined : numQuestions,
+        difficulty === "AUTO" ? undefined : difficulty,
       );
       onStart(result.interviewId); // FIX: Navigate to interview session on success
     } catch (err: any) {
@@ -170,6 +175,7 @@ const InterviewStart: React.FC<InterviewStartProps> = ({ onStart }) => {
   }, [
     resumeId,
     selectedJobRole,
+    difficulty,
     hasPermission,
     checkPermissions,
     onStart,
@@ -355,6 +361,76 @@ const InterviewStart: React.FC<InterviewStartProps> = ({ onStart }) => {
                   {num} Questions
                 </MenuItem>
               ))}
+            </Select>
+          </FormControl>
+        </CardContent>
+      </Card>
+
+      {/* ===== Section 2.6: Difficulty Level ===== */}
+      <Card
+        elevation={0}
+        sx={{
+          mb: 3,
+          borderRadius: 3,
+          border: "1px solid",
+          borderColor: "divider",
+        }}
+      >
+        <CardContent sx={{ p: 3 }}>
+          <Typography variant="subtitle1" fontWeight={600} gutterBottom>
+            Difficulty Level
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Choose the difficulty of interview questions
+          </Typography>
+          <FormControl fullWidth size="small">
+            <InputLabel id="difficulty-label">Select difficulty</InputLabel>
+            <Select
+              labelId="difficulty-label"
+              value={difficulty}
+              label="Select difficulty"
+              onChange={(e) => setDifficulty(e.target.value as DifficultyLevel)}
+            >
+              <MenuItem value="AUTO">
+                <Box>
+                  <Typography variant="body2" fontWeight={500}>
+                    Auto (Adaptive)
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    AI adjusts difficulty based on your responses
+                  </Typography>
+                </Box>
+              </MenuItem>
+              <MenuItem value="EASY">
+                <Box>
+                  <Typography variant="body2" fontWeight={500}>
+                    Easy
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Foundational questions for beginners
+                  </Typography>
+                </Box>
+              </MenuItem>
+              <MenuItem value="MEDIUM">
+                <Box>
+                  <Typography variant="body2" fontWeight={500}>
+                    Medium
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Standard interview-level questions
+                  </Typography>
+                </Box>
+              </MenuItem>
+              <MenuItem value="HARD">
+                <Box>
+                  <Typography variant="body2" fontWeight={500}>
+                    Hard
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Challenging questions for senior roles
+                  </Typography>
+                </Box>
+              </MenuItem>
             </Select>
           </FormControl>
         </CardContent>

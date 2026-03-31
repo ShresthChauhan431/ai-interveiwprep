@@ -7,17 +7,19 @@ import {
   Alert,
   CircularProgress,
   Paper,
+  Chip,
 } from "@mui/material";
-import { Videocam, Send, Replay, VideocamOff } from "@mui/icons-material";
+import { Videocam, Send, Replay, VideocamOff, Mic, MicOff } from "@mui/icons-material";
 import { useVideoRecording } from "../../hooks/useVideoRecording";
 import { useMediaPermissions } from "../../hooks/useMediaPermissions";
+import { useSpeechRecognition } from "../../hooks/useSpeechRecognition";
 
 // ============================================================
 // Props
 // ============================================================
 
 interface VideoRecorderProps {
-  onRecordingComplete: (videoBlob: Blob) => Promise<void>;
+  onRecordingComplete: (videoBlob: Blob, transcript?: string) => Promise<void>;
   maxDuration?: number;
   questionText: string;
   isUploading?: boolean;
@@ -64,6 +66,18 @@ const VideoRecorder: React.FC<VideoRecorderProps> = ({
     error: permissionError,
     requestPermissions,
   } = useMediaPermissions();
+
+  // Browser-based speech recognition for local mode transcription fallback
+  const {
+    isSupported: isSpeechSupported,
+    isListening,
+    transcript,
+    interimTranscript,
+    error: speechError,
+    startListening,
+    stopListening,
+    resetTranscript,
+  } = useSpeechRecognition();
 
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -117,8 +131,14 @@ const VideoRecorder: React.FC<VideoRecorderProps> = ({
     setSubmitError(null);
     stopCameraPreview();
     setIsAutoSubmitting(false);
+    resetTranscript(); // Reset browser transcript for new recording
     await startRecording(maxDuration);
-  }, [maxDuration, startRecording, stopCameraPreview]);
+    
+    // Start browser speech recognition alongside video recording
+    if (isSpeechSupported) {
+      startListening();
+    }
+  }, [maxDuration, startRecording, stopCameraPreview, isSpeechSupported, startListening, resetTranscript]);
 
   // Start camera preview when permission is granted
   useEffect(() => {
@@ -175,11 +195,13 @@ const VideoRecorder: React.FC<VideoRecorderProps> = ({
   const handleFinishAnswering = () => {
     setIsAutoSubmitting(true);
     stopRecording();
+    stopListening(); // Stop browser speech recognition
   };
 
   const handleReRecord = () => {
     setSubmitError(null);
     setIsAutoSubmitting(false);
+    resetTranscript(); // Clear previous transcript
     startCameraPreview();
   };
 
@@ -189,13 +211,16 @@ const VideoRecorder: React.FC<VideoRecorderProps> = ({
     setSubmitError(null);
 
     try {
-      await onRecordingComplete(recordedBlob);
+      // Pass the browser-captured transcript alongside the video blob
+      // This provides transcription even when AssemblyAI can't access local files
+      const browserTranscript = transcript.trim() || undefined;
+      await onRecordingComplete(recordedBlob, browserTranscript);
     } catch (err: any) {
       setSubmitError(
         err.message || "Failed to submit response. Please try again.",
       );
     }
-  }, [recordedBlob, onRecordingComplete]);
+  }, [recordedBlob, onRecordingComplete, transcript]);
 
   // Auto-submit when recording is ready
   useEffect(() => {
@@ -217,7 +242,7 @@ const VideoRecorder: React.FC<VideoRecorderProps> = ({
   // Render
   // ============================================================
 
-  const error = recordingError || permissionError || submitError;
+  const error = recordingError || permissionError || submitError || speechError;
 
   return (
     <Paper
@@ -341,6 +366,38 @@ const VideoRecorder: React.FC<VideoRecorderProps> = ({
                     {formatTime(recordingTime)}
                   </Typography>
                 </Box>
+                
+                {/* Speech recognition indicator */}
+                {isSpeechSupported && (
+                  <Box
+                    sx={{
+                      position: "absolute",
+                      top: 12,
+                      right: 12,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 0.5,
+                      bgcolor: "rgba(0,0,0,0.6)",
+                      px: 1,
+                      py: 0.5,
+                      borderRadius: 1,
+                      zIndex: 1,
+                    }}
+                  >
+                    {isListening ? (
+                      <Mic sx={{ fontSize: 16, color: "#4caf50" }} />
+                    ) : (
+                      <MicOff sx={{ fontSize: 16, color: "#ff9800" }} />
+                    )}
+                    <Typography
+                      variant="caption"
+                      sx={{ color: "#fff", fontSize: "0.7rem" }}
+                    >
+                      {isListening ? "Transcribing" : "No speech"}
+                    </Typography>
+                  </Box>
+                )}
+
                 <Typography
                   variant="body2"
                   sx={{
@@ -431,6 +488,32 @@ const VideoRecorder: React.FC<VideoRecorderProps> = ({
                 color="error"
                 sx={{ mb: 2, height: 6, borderRadius: 3 }}
               />
+              
+              {/* Live transcript preview */}
+              {isSpeechSupported && (transcript || interimTranscript) && (
+                <Paper
+                  variant="outlined"
+                  sx={{
+                    p: 1.5,
+                    mb: 2,
+                    bgcolor: "grey.50",
+                    maxHeight: 80,
+                    overflowY: "auto",
+                  }}
+                >
+                  <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
+                    <Mic sx={{ fontSize: 12, mr: 0.5, verticalAlign: "middle" }} />
+                    Live Transcription:
+                  </Typography>
+                  <Typography variant="body2" sx={{ wordBreak: "break-word" }}>
+                    {transcript}
+                    <span style={{ color: "#888", fontStyle: "italic" }}>
+                      {interimTranscript}
+                    </span>
+                  </Typography>
+                </Paper>
+              )}
+
               <Box sx={{ display: "flex", justifyContent: "center" }}>
                 <Button
                   variant="contained"
@@ -467,6 +550,35 @@ const VideoRecorder: React.FC<VideoRecorderProps> = ({
               style={{ width: "100%", display: "block", maxHeight: 400 }}
             />
           </Box>
+
+          {/* Captured transcript preview */}
+          {transcript && (
+            <Paper
+              variant="outlined"
+              sx={{
+                p: 1.5,
+                mb: 2,
+                bgcolor: "success.50",
+                border: "1px solid",
+                borderColor: "success.light",
+              }}
+            >
+              <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, mb: 0.5 }}>
+                <Mic sx={{ fontSize: 14, color: "success.main" }} />
+                <Typography variant="caption" color="success.dark" fontWeight={500}>
+                  Captured Transcript
+                </Typography>
+                <Chip 
+                  label="Browser" 
+                  size="small" 
+                  sx={{ ml: "auto", fontSize: "0.65rem", height: 18 }} 
+                />
+              </Box>
+              <Typography variant="body2" sx={{ wordBreak: "break-word", maxHeight: 60, overflowY: "auto" }}>
+                {transcript}
+              </Typography>
+            </Paper>
+          )}
 
           {/* Action Buttons */}
           <Box sx={{ display: "flex", justifyContent: "center", gap: 2 }}>

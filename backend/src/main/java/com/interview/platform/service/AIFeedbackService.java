@@ -239,13 +239,13 @@ public class AIFeedbackService {
     /**
      * FIX: Build a basic fallback feedback when Ollama returns invalid JSON.
      * Never let a JSON parse error crash the feedback generation — return
-     * a usable feedback object with score 50 and summary message.
+     * a usable feedback object with appropriate score based on transcription availability.
      *
      * @param responses the interview responses (for building a basic summary)
      * @return a FeedbackDTO with default values
      */
     private FeedbackDTO buildFallbackFeedback(List<Response> responses) {
-        log.info("FIX: Building fallback feedback for {} responses", responses.size()); // FIX: Log fallback usage
+        log.info("FIX: Building fallback feedback for {} responses", responses.size());
         FeedbackDTO dto = new FeedbackDTO();
 
         if (responses.isEmpty()) {
@@ -258,21 +258,65 @@ public class AIFeedbackService {
             ));
             dto.setDetailedAnalysis("We could not generate detailed feedback because no responses were recorded for this interview session. "
                     + "Please make sure you record and submit your answers before finishing the interview.");
-        } else {
-            dto.setScore(50); // FIX: Neutral score when automatic analysis is unavailable
-            dto.setStrengths(List.of("Completed the interview", "Responded to questions")); // FIX: Basic positive
-                                                                                                // feedback
-            dto.setWeaknesses(List.of("Automatic analysis was unavailable for detailed feedback")); // FIX: Explain
-                                                                                                    // limitation
-            dto.setRecommendations(List.of(
-                    "Review your responses and self-evaluate against the job requirements", // FIX: Actionable suggestion
-                    "Practice answering similar questions with a peer for more detailed feedback" // FIX: Actionable
-                                                                                                  // suggestion
+            return dto;
+        }
+
+        // Count responses with valid transcriptions (not empty, not placeholder messages)
+        long validTranscriptions = responses.stream()
+                .filter(r -> {
+                    String t = r.getTranscription();
+                    return t != null && !t.isBlank() 
+                        && !t.contains("[Transcription unavailable")
+                        && !t.equals("No response recorded");
+                })
+                .count();
+
+        if (validTranscriptions == 0) {
+            // No real transcriptions available - score of 0 is more accurate than 50
+            dto.setScore(0);
+            dto.setStrengths(List.of("Completed the interview session", "Submitted video responses"));
+            dto.setWeaknesses(List.of(
+                    "Transcriptions were unavailable for your responses",
+                    "AI feedback could not be generated without transcriptions"
             ));
-            dto.setDetailedAnalysis("Automatic analysis unavailable. Here is a summary of your responses: " // FIX: Honest
-                                                                                                            // explanation
-                    + "You answered " + responses.size() + " questions during this interview session. "
-                    + "Please review the questions and your responses to self-assess your performance.");
+            dto.setRecommendations(List.of(
+                    "Ensure your microphone is working and speech is clearly audible",
+                    "In local development mode, transcription requires browser speech recognition",
+                    "Re-attempt the interview with a stable internet connection for cloud transcription"
+            ));
+            dto.setDetailedAnalysis("We could not generate detailed feedback because no transcriptions were captured for your responses. "
+                    + "You submitted " + responses.size() + " video responses, but the audio could not be transcribed. "
+                    + "This may happen in local development mode where cloud transcription is unavailable. "
+                    + "Please ensure your microphone is working and try again.");
+        } else if (validTranscriptions < responses.size()) {
+            // Partial transcriptions - give proportional score
+            int proportionalScore = (int) ((validTranscriptions * 50) / responses.size());
+            dto.setScore(Math.max(25, proportionalScore)); // At least 25 if some responses were captured
+            dto.setStrengths(List.of(
+                    "Completed the interview",
+                    validTranscriptions + " out of " + responses.size() + " responses were transcribed"
+            ));
+            dto.setWeaknesses(List.of(
+                    "Some responses could not be transcribed",
+                    "Automatic analysis was only partial"
+            ));
+            dto.setRecommendations(List.of(
+                    "Ensure consistent microphone quality throughout the interview",
+                    "Speak clearly and at a moderate pace for better transcription accuracy"
+            ));
+            dto.setDetailedAnalysis("Partial feedback available. " + validTranscriptions + " out of " + responses.size() 
+                    + " responses were successfully transcribed. Review your video recordings to self-assess the missing responses.");
+        } else {
+            // All transcriptions available but Ollama parsing failed
+            dto.setScore(50); // Neutral score when Ollama analysis fails
+            dto.setStrengths(List.of("Completed the interview", "All responses were transcribed"));
+            dto.setWeaknesses(List.of("Automatic AI analysis was unavailable for detailed feedback"));
+            dto.setRecommendations(List.of(
+                    "Review your responses and self-evaluate against the job requirements",
+                    "Practice answering similar questions with a peer for more detailed feedback"
+            ));
+            dto.setDetailedAnalysis("Automatic AI analysis unavailable but all " + responses.size() 
+                    + " responses were captured. Please review your answers to self-assess your performance.");
         }
         return dto;
     }

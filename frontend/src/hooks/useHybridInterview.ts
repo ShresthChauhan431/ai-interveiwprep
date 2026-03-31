@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useInterviewStore } from "../stores/useInterviewStore";
 import { interviewService } from "../services/interview.service";
 import { InterviewQuestion, NextQuestionResponse } from "../types";
@@ -13,6 +13,11 @@ import { InterviewQuestion, NextQuestionResponse } from "../types";
 //   after each answer using Ollama, informed by job role, resume, and
 //   ALL previous Q&A pairs.
 //
+// PREFETCH OPTIMIZATION:
+// - While user is answering a question, prefetch the next question in background
+// - This reduces perceived wait time between questions
+// - Prefetched questions are cached and used when advancing
+//
 // The hook exposes:
 // - currentQuestion: The current question object
 // - isTransitioning: True when generating next question or uploading
@@ -21,6 +26,7 @@ import { InterviewQuestion, NextQuestionResponse } from "../types";
 // - isLastQuestion: True if on the final question
 // - totalQuestions: Total number of questions in interview
 // - transitionError: Error message if transition failed
+// - isPrefetching: True when background prefetch is in progress
 // ============================================================
 
 interface UseHybridInterviewOptions {
@@ -41,6 +47,8 @@ interface UseHybridInterviewReturn {
   isTransitioning: boolean;
   /** True when waiting for transcription to complete */
   isTranscribing: boolean;
+  /** True when prefetching next question in background */
+  isPrefetching: boolean;
   /** How the current question was generated */
   generationMode: "PRE_GENERATED" | "DYNAMIC" | null;
   /** True if this is the last question */
@@ -72,6 +80,10 @@ interface UseHybridInterviewReturn {
    * Only allows navigating to already-answered questions.
    */
   goToQuestion: (index: number) => void;
+  /**
+   * Manually trigger prefetch of next question (called when user starts recording)
+   */
+  startPrefetch: () => void;
 }
 
 export const useHybridInterview = ({
@@ -91,10 +103,16 @@ export const useHybridInterview = ({
   // ── Local State ─────────────────────────────────────────────
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
+  const [isPrefetching, setIsPrefetching] = useState(false);
   const [transitionError, setTransitionError] = useState<string | null>(null);
   const [generationMode, setGenerationMode] = useState<
     "PRE_GENERATED" | "DYNAMIC" | null
   >(null);
+
+  // ── Prefetch Cache ──────────────────────────────────────────
+  // Cache for prefetched next question (keyed by current question ID)
+  const prefetchCacheRef = useRef<Map<number, NextQuestionResponse>>(new Map());
+  const prefetchInProgressRef = useRef<Set<number>>(new Set());
 
   // ── Derived State ───────────────────────────────────────────
   const questions: InterviewQuestion[] = useMemo(() => {
@@ -133,6 +151,68 @@ export const useHybridInterview = ({
     },
     [questions, setCurrentQuestionIndex, setRecordingState],
   );
+
+  // ── Prefetch Next Question ──────────────────────────────────
+  // Called when user starts recording to pre-generate the next question
+  // This runs in parallel with the user answering, reducing wait time
+  const startPrefetch = useCallback(async () => {
+    if (!currentQuestion || isLastQuestion) return;
+    
+    const questionId = currentQuestion.questionId;
+    
+    // Skip if already prefetching or cached for this question
+    if (prefetchInProgressRef.current.has(questionId)) return;
+    if (prefetchCacheRef.current.has(questionId)) return;
+    
+    // Check if next question is already pre-generated (in questions array)
+    const nextIndex = currentQuestionIndex + 1;
+    if (nextIndex < questions.length && questions[nextIndex]) {
+      // Next question already exists, no need to prefetch
+      return;
+    }
+    
+    prefetchInProgressRef.current.add(questionId);
+    setIsPrefetching(true);
+    
+    try {
+      console.log(`[Prefetch] Starting prefetch for question after ${questionId}`);
+      
+      // Call the backend to pre-generate the next question
+      // We pass empty transcript since we don't have the answer yet
+      // The backend will use previous Q&A pairs for context
+      const response = await interviewService.submitAnswerAndGetNext(
+        interviewId,
+        questionId,
+        "", // Empty transcript - backend will handle gracefully
+        undefined, // No video URL yet
+      );
+      
+      // Cache the prefetched response
+      prefetchCacheRef.current.set(questionId, response);
+      console.log(`[Prefetch] Cached prefetched question for ${questionId}`);
+      
+    } catch (err) {
+      // Prefetch failure is non-fatal - we'll generate on demand
+      console.warn(`[Prefetch] Failed to prefetch next question:`, err);
+    } finally {
+      prefetchInProgressRef.current.delete(questionId);
+      setIsPrefetching(false);
+    }
+  }, [currentQuestion, currentQuestionIndex, interviewId, isLastQuestion, questions]);
+
+  // ── Auto-prefetch when question changes ─────────────────────
+  // Automatically start prefetching when user views a new question
+  useEffect(() => {
+    if (currentQuestion && !isLastQuestion && !isTransitioning) {
+      // Small delay to avoid prefetching during rapid transitions
+      const timer = setTimeout(() => {
+        startPrefetch();
+      }, 2000); // Start prefetch 2 seconds after question appears
+      
+      return () => clearTimeout(timer);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentQuestion?.questionId, isLastQuestion, isTransitioning]);
 
   // ── Poll for Transcription ──────────────────────────────────
   const pollForTranscription = useCallback(
@@ -217,20 +297,67 @@ export const useHybridInterview = ({
         }
 
         // Step 1b: Wait for AssemblyAI to transcribe the uploaded video
+        // In local mode, AssemblyAI can't access the files, so use browser transcript as fallback
         setIsTranscribing(true);
-        const transcript = await pollForTranscription(
-          currentQuestion.questionId,
-        );
+        let finalTranscript = answerTranscript; // Start with browser transcript
+        
+        if (!finalTranscript) {
+          // No browser transcript - poll for AssemblyAI transcription
+          finalTranscript = await pollForTranscription(
+            currentQuestion.questionId,
+          );
+        } else {
+          // Have browser transcript - still poll but use browser transcript if AssemblyAI fails
+          try {
+            const assemblyTranscript = await pollForTranscription(
+              currentQuestion.questionId,
+            );
+            // If AssemblyAI returns a real transcript (not placeholder), prefer it
+            if (assemblyTranscript && 
+                !assemblyTranscript.includes("[Transcription unavailable") &&
+                !assemblyTranscript.includes("No response recorded") &&
+                assemblyTranscript.length > finalTranscript.length * 0.5) {
+              finalTranscript = assemblyTranscript;
+              console.log("[Transcription] Using AssemblyAI transcript");
+            } else {
+              console.log("[Transcription] Using browser transcript (AssemblyAI unavailable)");
+            }
+          } catch {
+            // AssemblyAI polling failed - use browser transcript
+            console.log("[Transcription] AssemblyAI poll failed, using browser transcript");
+          }
+        }
         setIsTranscribing(false);
 
-        // Step 2: Submit answer with real transcript and get next question (hybrid flow)
-        const response: NextQuestionResponse =
-          await interviewService.submitAnswerAndGetNext(
+        // Step 2: Check if we have a prefetched response for this question
+        let response: NextQuestionResponse;
+        const prefetchedResponse = prefetchCacheRef.current.get(currentQuestion.questionId);
+        
+        if (prefetchedResponse) {
+          // Use prefetched response - much faster!
+          console.log(`[Prefetch] Using cached response for question ${currentQuestion.questionId}`);
+          response = prefetchedResponse;
+          prefetchCacheRef.current.delete(currentQuestion.questionId);
+          
+          // Still need to submit the actual answer with transcript
+          // Fire and forget - don't wait for this since we have the next question
+          interviewService.submitAnswerAndGetNext(
             interviewId,
             currentQuestion.questionId,
-            transcript,
+            finalTranscript,
+            videoUrl,
+          ).catch((err) => {
+            console.warn("[Prefetch] Background answer submission failed:", err);
+          });
+        } else {
+          // No prefetch available - generate next question synchronously
+          response = await interviewService.submitAnswerAndGetNext(
+            interviewId,
+            currentQuestion.questionId,
+            finalTranscript,
             videoUrl,
           );
+        }
 
         // Step 3: Handle response
         if (response.interviewComplete) {
@@ -339,6 +466,7 @@ export const useHybridInterview = ({
     currentQuestionIndex,
     isTransitioning,
     isTranscribing,
+    isPrefetching,
     generationMode,
     isLastQuestion,
     totalQuestions,
@@ -347,6 +475,7 @@ export const useHybridInterview = ({
     clearTransitionError,
     advanceToNext,
     goToQuestion,
+    startPrefetch,
   };
 };
 

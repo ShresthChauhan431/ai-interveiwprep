@@ -175,9 +175,9 @@ public class InterviewService {
      *                          if resume doesn't belong to user or has no text
      */
     @Transactional
-    public InterviewDTO startInterview(Long userId, Long resumeId, Long jobRoleId, Integer numQuestions) {
-        log.info("Starting interview for user: {}, resume: {}, jobRole: {}, numQuestions: {}", userId, resumeId,
-                jobRoleId, numQuestions);
+    public InterviewDTO startInterview(Long userId, Long resumeId, Long jobRoleId, Integer numQuestions, String difficulty) {
+        log.info("Starting interview for user: {}, resume: {}, jobRole: {}, numQuestions: {}, difficulty: {}", userId, resumeId,
+                jobRoleId, numQuestions, difficulty);
 
         // ── Validate user ────────────────────────────────────────
         User user = userRepository.findById(userId)
@@ -237,8 +237,9 @@ public class InterviewService {
         log.info("Interview {} using {} mode: pregenCount={}, totalQuestions={}",
                 interview.getId(), hybridMode ? "HYBRID" : "FULL_PREGEN", pregenCount, finalNumQuestions);
 
-        // Store total question count on interview for later use in dynamic generation
+        // Store total question count and difficulty on interview for later use in dynamic generation
         interview.setTotalQuestions(finalNumQuestions);
+        interview.setDifficulty(difficulty); // Store difficulty for dynamic question generation
         interviewRepository.save(interview);
 
         // FIX: Wrap entire question generation + TTS in try-catch so errors are actionable
@@ -246,7 +247,7 @@ public class InterviewService {
         try {
             // Step 1: Generate only the pre-generated zone questions via Ollama
             // (In hybrid mode, remaining questions will be generated dynamically after each answer)
-            questions = ollamaService.generateQuestionsWithResilience(resume, jobRole, pregenCount);
+            questions = ollamaService.generateQuestionsWithResilience(resume, jobRole, pregenCount, difficulty);
         } catch (ResourceAccessException e) {
             // FIX: Ollama connection refused — give clear instructions to the user
             log.error("Ollama is not reachable. Cannot generate questions for interview {}", interview.getId(), e);

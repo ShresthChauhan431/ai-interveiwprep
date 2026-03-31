@@ -486,6 +486,12 @@ public class SpeechToTextService {
                         String text = root.path("text").asText("");
                         double confidence = root.path("confidence").asDouble(0.0);
 
+                        // FIX: Warn if confidence is low - transcription may be inaccurate
+                        if (confidence < 0.7) {
+                            log.warn("Low transcription confidence for {}: {} (may affect feedback quality)", 
+                                    transcriptId, confidence);
+                        }
+
                         log.info("Transcription {} completed after {} polls (confidence: {})",
                                 transcriptId, attempt + 1, confidence);
 

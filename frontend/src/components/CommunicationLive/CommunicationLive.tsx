@@ -36,13 +36,7 @@ import {
 } from "../../store/communicationStore";
 import { communicationService } from "../../services/communication.service";
 
-// Web Speech API types
-declare global {
-  interface Window {
-    SpeechRecognition: any;
-    webkitSpeechRecognition: any;
-  }
-}
+// Web Speech API types are declared in src/types/speech-recognition.d.ts
 
 const CommunicationLive: React.FC = () => {
   const {

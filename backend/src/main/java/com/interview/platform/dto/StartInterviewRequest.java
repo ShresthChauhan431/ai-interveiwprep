@@ -15,13 +15,16 @@ public class StartInterviewRequest {
 
     private Integer numQuestions; // Optional, defaults handled in service
 
+    private String difficulty; // Optional: EASY, MEDIUM, HARD, or null for AUTO
+
     public StartInterviewRequest() {
     }
 
-    public StartInterviewRequest(Long resumeId, Long jobRoleId, Integer numQuestions) {
+    public StartInterviewRequest(Long resumeId, Long jobRoleId, Integer numQuestions, String difficulty) {
         this.resumeId = resumeId;
         this.jobRoleId = jobRoleId;
         this.numQuestions = numQuestions;
+        this.difficulty = difficulty;
     }
 
     public Long getResumeId() {
@@ -46,5 +49,13 @@ public class StartInterviewRequest {
 
     public void setNumQuestions(Integer numQuestions) {
         this.numQuestions = numQuestions;
+    }
+
+    public String getDifficulty() {
+        return difficulty;
+    }
+
+    public void setDifficulty(String difficulty) {
+        this.difficulty = difficulty;
     }
 }

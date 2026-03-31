@@ -115,9 +115,23 @@ public class OllamaService {
      * @return a list of generated Question entities
      */
     public List<Question> generateQuestionsWithResilience(Resume resume, JobRole jobRole, int numQuestions) {
+        return generateQuestionsWithResilience(resume, jobRole, numQuestions, null);
+    }
+
+    /**
+     * Generate interview questions based on the candidate's resume, job role, and difficulty.
+     * Uses Resilience4j retry and circuit breaker.
+     *
+     * @param resume       the parsed candidate resume
+     * @param jobRole      the target job role
+     * @param numQuestions number of questions to generate
+     * @param difficulty   optional difficulty level (EASY, MEDIUM, HARD, or null for mixed)
+     * @return a list of generated Question entities
+     */
+    public List<Question> generateQuestionsWithResilience(Resume resume, JobRole jobRole, int numQuestions, String difficulty) {
         try { // FIX: Wrap with try-catch to fall back to generic questions if Ollama
               // completely fails
-            return Decorators.ofSupplier(() -> generateQuestions(resume, jobRole, numQuestions))
+            return Decorators.ofSupplier(() -> generateQuestions(resume, jobRole, numQuestions, difficulty))
                     .withRetry(ollamaRetry)
                     .withCircuitBreaker(ollamaCircuitBreaker)
                     .decorate()
@@ -243,6 +257,22 @@ public class OllamaService {
 
         int questionsRemaining = totalQuestions - nextQuestionNumber + 1;
 
+        // Get the difficulty setting from the interview
+        String difficultyLevel = interview.getDifficulty();
+        String difficultyInstruction;
+        String enforcedDifficulty;
+        
+        if (difficultyLevel == null || difficultyLevel.isBlank() || difficultyLevel.equalsIgnoreCase("AUTO")) {
+            difficultyInstruction = "Adapt the difficulty based on how well the candidate answered previous questions.";
+            enforcedDifficulty = "MEDIUM";
+        } else {
+            enforcedDifficulty = difficultyLevel.toUpperCase();
+            difficultyInstruction = String.format(
+                "CRITICAL: This question MUST be %s difficulty. The user selected %s mode for this interview.",
+                enforcedDifficulty, enforcedDifficulty
+            );
+        }
+
         return String.format(
                 """
                 You are a skilled technical interviewer conducting an interview for a %s position.
@@ -258,6 +288,9 @@ public class OllamaService {
                 CONVERSATION SO FAR:
                 %s
                 
+                === DIFFICULTY REQUIREMENT ===
+                %s
+                
                 Based on the candidate's previous answers, generate the NEXT interview question.
                 
                 ADAPTIVE GUIDELINES:
@@ -266,17 +299,18 @@ public class OllamaService {
                 - Mix technical and behavioral questions appropriately
                 - For the final questions, consider wrap-up or reflection questions
                 - Keep questions clear, specific, and answerable in 1-2 minutes
+                - ALWAYS maintain the %s difficulty level as specified above
                 
                 Return ONLY a valid JSON object in this exact format, no other text:
                 {
                   "questionText": "Your next interview question here",
                   "category": "TECHNICAL",
-                  "difficulty": "MEDIUM",
+                  "difficulty": "%s",
                   "rationale": "Brief explanation of why this question follows logically"
                 }
                 
                 Categories: TECHNICAL, BEHAVIORAL, GENERAL
-                Difficulties: EASY, MEDIUM, HARD
+                Difficulty MUST be: %s
                 """,
                 jobTitle,
                 jobDescription.isEmpty() ? "(No detailed description provided)" : jobDescription,
@@ -284,7 +318,11 @@ public class OllamaService {
                 nextQuestionNumber,
                 totalQuestions,
                 questionsRemaining,
-                conversationHistory.isEmpty() ? "(This is the first dynamically generated question)" : conversationHistory
+                conversationHistory.isEmpty() ? "(This is the first dynamically generated question)" : conversationHistory,
+                difficultyInstruction,
+                enforcedDifficulty,
+                enforcedDifficulty,
+                enforcedDifficulty
         );
     }
 
@@ -383,8 +421,8 @@ public class OllamaService {
         return question;
     }
 
-    private List<Question> generateQuestions(Resume resume, JobRole jobRole, int numQuestions) {
-        String prompt = buildQuestionGenerationPrompt(resume, jobRole, numQuestions);
+    private List<Question> generateQuestions(Resume resume, JobRole jobRole, int numQuestions, String difficulty) {
+        String prompt = buildQuestionGenerationPrompt(resume, jobRole, numQuestions, difficulty);
 
         // Required Ollama format constraint
         Map<String, Object> requestBody = new LinkedHashMap<>();
@@ -411,13 +449,68 @@ public class OllamaService {
         return parseQuestionsResponse(content, numQuestions);
     }
 
-    private String buildQuestionGenerationPrompt(Resume resume, JobRole jobRole, int numQuestions) {
+    private String buildQuestionGenerationPrompt(Resume resume, JobRole jobRole, int numQuestions, String difficulty) {
         // P1-4: Sanitize resume text to reduce prompt injection risk
         String rawText = resume.getExtractedText() != null ? resume.getExtractedText() : "No resume content available";
         String safeText = sanitizeResumeText(rawText);
 
-        // FIX: Improved prompt that instructs Ollama to return ONLY a JSON array,
-        // nothing else
+        // Normalize difficulty
+        String normalizedDifficulty = (difficulty == null || difficulty.isBlank() || difficulty.equalsIgnoreCase("AUTO")) 
+            ? null 
+            : difficulty.toUpperCase();
+
+        // Build difficulty instruction based on selected level
+        String difficultyInstruction;
+        String difficultyExamples;
+        String enforcedDifficulty;
+        
+        if (normalizedDifficulty == null) {
+            difficultyInstruction = "Mix difficulties appropriately (EASY, MEDIUM, HARD) based on the role requirements.";
+            enforcedDifficulty = "MEDIUM"; // Default for JSON template
+            difficultyExamples = "";
+        } else {
+            difficultyInstruction = String.format(
+                "CRITICAL: ALL %d questions MUST be %s difficulty. Do NOT include any %s questions.",
+                numQuestions, 
+                normalizedDifficulty,
+                normalizedDifficulty.equals("EASY") ? "MEDIUM or HARD" : 
+                    (normalizedDifficulty.equals("HARD") ? "EASY or MEDIUM" : "EASY or HARD")
+            );
+            enforcedDifficulty = normalizedDifficulty;
+            
+            // Add difficulty-specific examples to guide the model
+            difficultyExamples = switch (normalizedDifficulty) {
+                case "EASY" -> """
+                    
+                    EASY questions should:
+                    - Ask about basic concepts and definitions
+                    - Require straightforward explanations
+                    - Focus on common scenarios and simple use cases
+                    - Be answerable by entry-level candidates
+                    Example: "Can you explain what a REST API is and give a simple example?"
+                    """;
+                case "HARD" -> """
+                    
+                    HARD questions should:
+                    - Require deep technical expertise and system design thinking
+                    - Present complex scenarios with trade-offs
+                    - Challenge candidates to think critically about edge cases
+                    - Be suitable for senior/staff-level candidates
+                    Example: "Design a distributed rate limiter that handles 1M requests/second across multiple data centers. What consistency guarantees would you choose and why?"
+                    """;
+                default -> """
+                    
+                    MEDIUM questions should:
+                    - Test practical application of concepts
+                    - Require some problem-solving but not expert-level knowledge
+                    - Balance between theory and hands-on experience
+                    - Be appropriate for mid-level candidates
+                    Example: "How would you optimize a slow database query that joins multiple tables?"
+                    """;
+            };
+        }
+
+        // FIX: Improved prompt that strongly enforces difficulty level
         return String.format(
                 """
                         You are a technical interviewer. Generate exactly %d interview questions
@@ -425,22 +518,34 @@ public class OllamaService {
 
                         %s
 
+                        === DIFFICULTY REQUIREMENTS ===
+                        %s
+                        %s
+                        
+                        === OUTPUT FORMAT ===
                         Return ONLY a valid JSON array in this exact format, no other text:
                         [
                           {
                             "questionText": "question here",
                             "category": "TECHNICAL",
-                            "difficulty": "MEDIUM"
+                            "difficulty": "%s"
                           }
                         ]
 
-                        Categories must be one of: TECHNICAL, BEHAVIORAL, GENERAL
-                        Difficulties must be one of: EASY, MEDIUM, HARD
-                        Generate exactly %d questions. Mix categories and difficulties.
+                        RULES:
+                        1. Categories must be one of: TECHNICAL, BEHAVIORAL, GENERAL
+                        2. Difficulty MUST be exactly: %s (this is mandatory)
+                        3. Generate exactly %d questions
+                        4. Mix categories appropriately for a well-rounded interview
+                        5. Each question must match the specified difficulty level
                         """,
                 numQuestions,
                 jobRole.getTitle(),
-                safeText.substring(0, Math.min(safeText.length(), MAX_PROMPT_RESUME_LENGTH)), // Issue 16: Use standardized constant
+                safeText.substring(0, Math.min(safeText.length(), MAX_PROMPT_RESUME_LENGTH)),
+                difficultyInstruction,
+                difficultyExamples,
+                enforcedDifficulty,
+                enforcedDifficulty,
                 numQuestions);
     }
 

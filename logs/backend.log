@@ -18,7 +18,7 @@ WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
 [INFO] 
 [INFO] --- resources:3.3.1:resources (default-resources) @ platform ---
 [INFO] Copying 2 resources from src/main/resources to target/classes
-[INFO] Copying 6 resources from src/main/resources to target/classes
+[INFO] Copying 8 resources from src/main/resources to target/classes
 [INFO] 
 [INFO] --- compiler:3.13.0:compile (default-compile) @ platform ---
 [INFO] Nothing to compile - all classes are up to date.
@@ -44,141 +44,156 @@ Standard Commons Logging discovery in action with spring-jcl: please remove comm
  =========|_|==============|___/=/_/_/_/
  :: Spring Boot ::                (v3.2.2)
 
-2026-03-30T11:14:09.012+05:30  INFO 59486 --- [           main] c.i.p.InterviewPlatformApplication       : Starting InterviewPlatformApplication using Java 25.0.1 with PID 59486 (/Users/shresthchauhan/Documents/Projects/ai Interview/ai-interveiwprep/backend/target/classes started by shresthchauhan in /Users/shresthchauhan/Documents/Projects/ai Interview/ai-interveiwprep/backend)
-2026-03-30T11:14:09.013+05:30  INFO 59486 --- [           main] c.i.p.InterviewPlatformApplication       : No active profile set, falling back to 1 default profile: "default"
-2026-03-30T11:14:09.385+05:30  INFO 59486 --- [           main] .s.d.r.c.RepositoryConfigurationDelegate : Bootstrapping Spring Data JPA repositories in DEFAULT mode.
-2026-03-30T11:14:09.420+05:30  INFO 59486 --- [           main] .s.d.r.c.RepositoryConfigurationDelegate : Finished Spring Data repository scanning in 32 ms. Found 9 JPA repository interfaces.
+2026-03-31T08:54:25.122+05:30  INFO 13403 --- [           main] c.i.p.InterviewPlatformApplication       : Starting InterviewPlatformApplication using Java 25.0.1 with PID 13403 (/Users/shresthchauhan/Documents/Projects/ai Interview/ai-interveiwprep/backend/target/classes started by shresthchauhan in /Users/shresthchauhan/Documents/Projects/ai Interview/ai-interveiwprep/backend)
+2026-03-31T08:54:25.122+05:30  INFO 13403 --- [           main] c.i.p.InterviewPlatformApplication       : No active profile set, falling back to 1 default profile: "default"
+2026-03-31T08:54:25.463+05:30  INFO 13403 --- [           main] .s.d.r.c.RepositoryConfigurationDelegate : Bootstrapping Spring Data JPA repositories in DEFAULT mode.
+2026-03-31T08:54:25.484+05:30  INFO 13403 --- [           main] .s.d.r.c.RepositoryConfigurationDelegate : Finished Spring Data repository scanning in 18 ms. Found 9 JPA repository interfaces.
 WARNING: A restricted method in java.lang.System has been called
 WARNING: java.lang.System::load has been called by org.apache.tomcat.jni.Library in an unnamed module (file:/Users/shresthchauhan/.m2/repository/org/apache/tomcat/embed/tomcat-embed-core/10.1.18/tomcat-embed-core-10.1.18.jar)
 WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
 WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
-2026-03-30T11:14:09.838+05:30  INFO 59486 --- [           main] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat initialized with port 8081 (http)
-2026-03-30T11:14:09.844+05:30  INFO 59486 --- [           main] o.apache.catalina.core.StandardService   : Starting service [Tomcat]
-2026-03-30T11:14:09.844+05:30  INFO 59486 --- [           main] o.apache.catalina.core.StandardEngine    : Starting Servlet engine: [Apache Tomcat/10.1.18]
-2026-03-30T11:14:09.879+05:30  INFO 59486 --- [           main] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring embedded WebApplicationContext
-2026-03-30T11:14:09.879+05:30  INFO 59486 --- [           main] w.s.c.ServletWebServerApplicationContext : Root WebApplicationContext: initialization completed in 852 ms
+2026-03-31T08:54:25.861+05:30  INFO 13403 --- [           main] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat initialized with port 8081 (http)
+2026-03-31T08:54:25.865+05:30  INFO 13403 --- [           main] o.apache.catalina.core.StandardService   : Starting service [Tomcat]
+2026-03-31T08:54:25.865+05:30  INFO 13403 --- [           main] o.apache.catalina.core.StandardEngine    : Starting Servlet engine: [Apache Tomcat/10.1.18]
+2026-03-31T08:54:25.889+05:30  INFO 13403 --- [           main] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring embedded WebApplicationContext
+2026-03-31T08:54:25.889+05:30  INFO 13403 --- [           main] w.s.c.ServletWebServerApplicationContext : Root WebApplicationContext: initialization completed in 752 ms
 Standard Commons Logging discovery in action with spring-jcl: please remove commons-logging.jar from classpath in order to avoid potential conflicts
-2026-03-30T11:14:10.028+05:30  INFO 59486 --- [           main] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Starting...
-2026-03-30T11:14:10.113+05:30  INFO 59486 --- [           main] com.zaxxer.hikari.pool.HikariPool        : HikariPool-1 - Added connection com.mysql.cj.jdbc.ConnectionImpl@28e48b65
-2026-03-30T11:14:10.114+05:30  INFO 59486 --- [           main] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Start completed.
-2026-03-30T11:14:10.145+05:30  INFO 59486 --- [           main] o.f.c.internal.license.VersionPrinter    : Flyway Community Edition 9.22.3 by Redgate
-2026-03-30T11:14:10.145+05:30  INFO 59486 --- [           main] o.f.c.internal.license.VersionPrinter    : See release notes here: https://rd.gt/416ObMi
-2026-03-30T11:14:10.145+05:30  INFO 59486 --- [           main] o.f.c.internal.license.VersionPrinter    : 
-2026-03-30T11:14:10.155+05:30  INFO 59486 --- [           main] org.flywaydb.core.FlywayExecutor         : Database: jdbc:mysql://localhost:3306/interview_platform (MySQL 8.0)
-2026-03-30T11:14:10.181+05:30  INFO 59486 --- [           main] o.f.core.internal.command.DbMigrate      : Current version of schema `interview_platform`: 6
-2026-03-30T11:14:10.181+05:30  WARN 59486 --- [           main] o.f.core.internal.command.DbMigrate      : outOfOrder mode is active. Migration of schema `interview_platform` may not be reproducible.
-2026-03-30T11:14:10.183+05:30  INFO 59486 --- [           main] o.f.core.internal.command.DbMigrate      : Schema `interview_platform` is up to date. No migration necessary.
-2026-03-30T11:14:10.226+05:30  INFO 59486 --- [           main] o.hibernate.jpa.internal.util.LogHelper  : HHH000204: Processing PersistenceUnitInfo [name: default]
-2026-03-30T11:14:10.248+05:30  INFO 59486 --- [           main] org.hibernate.Version                    : HHH000412: Hibernate ORM core version 6.4.1.Final
-2026-03-30T11:14:10.258+05:30  INFO 59486 --- [           main] o.h.c.internal.RegionFactoryInitiator    : HHH000026: Second-level cache disabled
-2026-03-30T11:14:10.326+05:30  INFO 59486 --- [           main] o.s.o.j.p.SpringPersistenceUnitInfo      : No LoadTimeWeaver setup: ignoring JPA class transformer
-2026-03-30T11:14:10.346+05:30  WARN 59486 --- [           main] org.hibernate.orm.deprecation            : HHH90000025: MySQLDialect does not need to be specified explicitly using 'hibernate.dialect' (remove the property setting and it will be selected by default)
-2026-03-30T11:14:10.675+05:30  INFO 59486 --- [           main] o.h.e.t.j.p.i.JtaPlatformInitiator       : HHH000489: No JTA platform available (set 'hibernate.transaction.jta.platform' to enable JTA platform integration)
-2026-03-30T11:14:10.694+05:30  INFO 59486 --- [           main] j.LocalContainerEntityManagerFactoryBean : Initialized JPA EntityManagerFactory for persistence unit 'default'
-2026-03-30T11:14:10.704+05:30  INFO 59486 --- [           main] c.i.platform.config.InterviewConfig      : Hybrid interview configuration loaded: pregenCount=1, generationTimeoutMs=15000
-2026-03-30T11:14:10.720+05:30  INFO 59486 --- [           main] c.i.platform.config.SecurityConfig       : CORS configured with allowed origins: http://localhost:3002
-2026-03-30T11:14:10.722+05:30  INFO 59486 --- [           main] c.i.platform.config.StorageConfig        : Local file storage initialized: path=/Users/shresthchauhan/Documents/Projects/ai Interview/ai-interveiwprep/backend/uploads (configured as './uploads'), baseUrl=http://localhost:8081
-2026-03-30T11:14:10.995+05:30  INFO 59486 --- [           main] c.i.platform.controller.FileController   : FileController initialized with storage root: /Users/shresthchauhan/Documents/Projects/ai Interview/ai-interveiwprep/backend/uploads
-2026-03-30T11:14:11.010+05:30  INFO 59486 --- [           main] o.s.d.j.r.query.QueryEnhancerFactory     : Hibernate is in classpath; If applicable, HQL parser will be used.
-2026-03-30T11:14:11.167+05:30  INFO 59486 --- [           main] c.i.platform.config.ResilienceConfig     : Resilience4j RetryRegistry initialized: maxAttempts=3, waitDuration=1000ms, backoffMultiplier=2.0
-2026-03-30T11:14:11.178+05:30  INFO 59486 --- [           main] c.i.platform.config.ResilienceConfig     : Resilience4j CircuitBreakerRegistry initialized: failureRateThreshold=50.0%, slidingWindowSize=10, waitDurationInOpenState=60s
-2026-03-30T11:14:11.253+05:30  INFO 59486 --- [           main] c.i.platform.service.OllamaService       : Ollama is running and reachable at http://localhost:11434 (status=200 OK)
-2026-03-30T11:14:11.257+05:30  INFO 59486 --- [           main] c.i.p.service.VideoStorageService        : VideoStorageService initialized with basePath: /Users/shresthchauhan/Documents/Projects/ai Interview/ai-interveiwprep/backend/uploads
-2026-03-30T11:14:11.412+05:30  WARN 59486 --- [           main] JpaBaseConfiguration$JpaWebConfiguration : spring.jpa.open-in-view is enabled by default. Therefore, database queries may be performed during view rendering. Explicitly configure spring.jpa.open-in-view to disable this warning
-2026-03-30T11:14:11.593+05:30  INFO 59486 --- [           main] o.s.b.a.e.web.EndpointLinksResolver      : Exposing 1 endpoint(s) beneath base path '/actuator'
-2026-03-30T11:14:11.638+05:30  INFO 59486 --- [           main] o.s.s.web.DefaultSecurityFilterChain     : Will secure any request with [org.springframework.security.web.session.DisableEncodeUrlFilter@79893462, org.springframework.security.web.context.request.async.WebAsyncManagerIntegrationFilter@583c416c, org.springframework.security.web.context.SecurityContextHolderFilter@1231e446, org.springframework.security.web.header.HeaderWriterFilter@548051d7, org.springframework.web.filter.CorsFilter@51038633, org.springframework.security.web.authentication.logout.LogoutFilter@2119bb3d, com.interview.platform.config.JwtAuthenticationFilter@1f26b992, org.springframework.security.web.savedrequest.RequestCacheAwareFilter@7c1a4a74, org.springframework.security.web.servletapi.SecurityContextHolderAwareRequestFilter@1dfa18a6, org.springframework.security.web.authentication.AnonymousAuthenticationFilter@46c09751, org.springframework.security.web.session.SessionManagementFilter@4a218cc6, org.springframework.security.web.access.ExceptionTranslationFilter@1b8117f4, org.springframework.security.web.access.intercept.AuthorizationFilter@c1dcdb9]
-2026-03-30T11:14:11.976+05:30  INFO 59486 --- [           main] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat started on port 8081 (http) with context path ''
-2026-03-30T11:14:11.983+05:30  INFO 59486 --- [           main] c.i.p.InterviewPlatformApplication       : Started InterviewPlatformApplication in 3.098 seconds (process running for 3.216)
-2026-03-30T11:14:12.189+05:30  INFO 59486 --- [omcat-handler-0] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring DispatcherServlet 'dispatcherServlet'
-2026-03-30T11:14:12.190+05:30  INFO 59486 --- [omcat-handler-0] o.s.web.servlet.DispatcherServlet        : Initializing Servlet 'dispatcherServlet'
-2026-03-30T11:14:12.191+05:30  INFO 59486 --- [omcat-handler-0] o.s.web.servlet.DispatcherServlet        : Completed initialization in 1 ms
-2026-03-30T11:16:52.193+05:30  INFO 59486 --- [mcat-handler-19] c.i.p.service.CommunicationLiveService   : Generating next conversation message. History size: 3
-2026-03-30T11:16:52.193+05:30  INFO 59486 --- [mcat-handler-20] c.i.p.service.CommunicationLiveService   : Analyzing sentence for live communication: speaking to get you can tell me little bit about yourself hi hi how are you
-2026-03-30T11:17:05.871+05:30 ERROR 59486 --- [mcat-handler-20] c.i.p.service.CommunicationLiveService   : Failed to analyze sentence with Ollama: I/O error on POST request for "http://localhost:11434/api/chat": Connection reset
-2026-03-30T11:17:41.344+05:30  INFO 59486 --- [mcat-handler-28] c.i.platform.service.ResumeService       : Analyzing resume for user: 11
-2026-03-30T11:19:44.225+05:30  INFO 59486 --- [mcat-handler-36] c.i.p.controller.InterviewController     : Starting interview — user: 11, resume: 11, jobRole: 9, numQuestions: null
-2026-03-30T11:19:44.231+05:30  INFO 59486 --- [mcat-handler-36] c.i.platform.service.InterviewService    : Starting interview for user: 11, resume: 11, jobRole: 9, numQuestions: null
-2026-03-30T11:19:44.276+05:30  INFO 59486 --- [mcat-handler-36] c.i.platform.service.InterviewService    : Interview created with ID: 95 (status=CREATED)
-2026-03-30T11:19:44.277+05:30  INFO 59486 --- [mcat-handler-36] c.i.platform.service.InterviewService    : Interview 95 using HYBRID mode: pregenCount=1, totalQuestions=5
-2026-03-30T11:19:53.317+05:30  INFO 59486 --- [mcat-handler-36] c.i.p.service.TextToSpeechService        : TTS cache MISS for question 257: textLength=255 chars
-2026-03-30T11:19:56.328+05:30  WARN 59486 --- [mcat-handler-36] c.i.p.service.TextToSpeechService        : ElevenLabs TTS call FAILED for question 257 — interview will proceed with text-only mode. Error: 401 Unauthorized: [no body]
-2026-03-30T11:19:56.330+05:30  INFO 59486 --- [mcat-handler-36] c.i.platform.service.InterviewService    : TTS audio generated for question 257 (interview 95)
-2026-03-30T11:19:56.331+05:30  INFO 59486 --- [mcat-handler-36] c.i.platform.service.InterviewService    : Saved 1 questions for interview ID: 95
-2026-03-30T11:19:56.332+05:30  INFO 59486 --- [mcat-handler-36] c.i.platform.service.InterviewService    : Interview 95 transitioned to IN_PROGRESS
-2026-03-30T11:19:56.335+05:30  INFO 59486 --- [mcat-handler-36] c.i.platform.service.InterviewService    : QuestionsCreatedEvent published for interview ID: 95 with 1 question IDs
-2026-03-30T11:19:56.360+05:30  INFO 59486 --- [               ] c.i.p.event.AvatarPipelineListener       : Avatar pipeline started: interviewId=95, questionCount=1
-2026-03-30T11:19:56.501+05:30  INFO 59486 --- [mcat-handler-43] c.i.p.controller.InterviewController     : SSE ticket generated: interviewId=95, userId=11
-2026-03-30T11:19:56.501+05:30  INFO 59486 --- [mcat-handler-44] c.i.p.controller.InterviewController     : SSE ticket generated: interviewId=95, userId=11
-2026-03-30T11:19:56.997+05:30  WARN 59486 --- [               ] c.i.p.service.TextToSpeechService        : TTS audio generation failed for question 257: 401 Unauthorized: [no body]
-2026-03-30T11:19:57.008+05:30  INFO 59486 --- [               ] c.i.p.event.AvatarPipelineListener       : TTS audio set for question 257: audioUrl=null
-2026-03-30T11:19:57.020+05:30  WARN 59486 --- [               ] c.i.p.event.AvatarPipelineListener       : Interview 95 is not in GENERATING_VIDEOS (current=IN_PROGRESS), skipping transition to IN_PROGRESS
-2026-03-30T11:19:57.020+05:30  INFO 59486 --- [               ] c.i.p.event.AvatarPipelineListener       : Avatar pipeline completed: interviewId=95, success=1, failed=0, elapsed=659ms
-2026-03-30T11:20:47.788+05:30  INFO 59486 --- [mcat-handler-48] c.i.p.controller.InterviewController     : Generating upload URL — user: 11, interview: 95, question: 257
-2026-03-30T11:20:47.793+05:30  INFO 59486 --- [mcat-handler-48] c.i.platform.service.InterviewService    : Generating presigned upload URL: user=11, interview=95, question=257
-2026-03-30T11:20:47.803+05:30  INFO 59486 --- [mcat-handler-48] c.i.p.service.VideoStorageService        : Generated upload URL for key=interviews/11/95/response_257_1774849847803.webm
-2026-03-30T11:20:47.803+05:30  INFO 59486 --- [mcat-handler-48] c.i.platform.service.InterviewService    : Presigned PUT URL generated: s3Key=interviews/11/95/response_257_1774849847803.webm, interview=95, question=257
-2026-03-30T11:20:47.858+05:30  INFO 59486 --- [mcat-handler-50] c.i.platform.controller.FileController   : File uploaded via PUT (raw): key=interviews/11/95/response_257_1774849847803.webm, size=8607560
-2026-03-30T11:20:47.880+05:30  INFO 59486 --- [mcat-handler-52] c.i.p.controller.InterviewController     : Confirming upload — user: 11, interview: 95, question: 257, s3Key: interviews/11/95/response_257_1774849847803.webm
-2026-03-30T11:20:47.896+05:30  INFO 59486 --- [mcat-handler-52] c.i.platform.service.InterviewService    : Confirming upload: user=11, interview=95, question=257, s3Key=interviews/11/95/response_257_1774849847803.webm
-2026-03-30T11:20:47.912+05:30  INFO 59486 --- [mcat-handler-52] c.i.platform.service.InterviewService    : Response saved for question 257: s3Key=interviews/11/95/response_257_1774849847803.webm
-2026-03-30T11:20:47.914+05:30  INFO 59486 --- [mcat-handler-52] c.i.platform.service.InterviewService    : Async transcription triggered for question 257
-2026-03-30T11:20:47.916+05:30  INFO 59486 --- [               ] c.i.p.service.SpeechToTextService        : Starting transcription for: interviews/11/95/response_257_1774849847803.webm
-2026-03-30T11:20:47.916+05:30  WARN 59486 --- [               ] c.i.p.service.SpeechToTextService        : Local development mode detected — AssemblyAI cannot access local files. Returning placeholder transcription for: interviews/11/95/response_257_1774849847803.webm
-2026-03-30T11:20:47.918+05:30  WARN 59486 --- [               ] c.i.p.service.SpeechToTextService        : No Response entity found for question 257 — transcription not persisted
-2026-03-30T11:20:47.926+05:30  INFO 59486 --- [mcat-handler-54] c.i.p.controller.InterviewController     : Submit answer and get next — user: 11, interview: 95, question: 257
-2026-03-30T11:20:47.928+05:30  INFO 59486 --- [mcat-handler-54] c.i.platform.service.InterviewService    : submitAnswerAndGetNext: user=11, interview=95, question=257
-2026-03-30T11:20:47.935+05:30  INFO 59486 --- [mcat-handler-54] c.i.platform.service.InterviewService    : Answer already exists for question 257 — skipping save
-2026-03-30T11:20:47.938+05:30  INFO 59486 --- [mcat-handler-54] c.i.platform.service.InterviewService    : Generating dynamic question 2 for interview 95
-2026-03-30T11:21:03.063+05:30  INFO 59486 --- [mcat-handler-54] c.i.platform.service.OllamaService       : Generated adaptive question 2: Can you walk me through your thought process when designing ... [TECHNICAL:MEDIUM]
-2026-03-30T11:21:03.102+05:30  INFO 59486 --- [mcat-handler-54] c.i.p.service.TextToSpeechService        : TTS cache MISS for question 258: textLength=242 chars
-2026-03-30T11:21:03.750+05:30  WARN 59486 --- [mcat-handler-54] c.i.p.service.TextToSpeechService        : ElevenLabs TTS call FAILED for question 258 — interview will proceed with text-only mode. Error: 401 Unauthorized: [no body]
-2026-03-30T11:21:03.752+05:30  INFO 59486 --- [mcat-handler-54] c.i.platform.service.InterviewService    : TTS audio generated for dynamic question 258 (interview 95)
-2026-03-30T11:21:24.959+05:30  INFO 59486 --- [mcat-handler-56] c.i.p.controller.InterviewController     : Generating upload URL — user: 11, interview: 95, question: 258
-2026-03-30T11:21:24.967+05:30  INFO 59486 --- [mcat-handler-56] c.i.platform.service.InterviewService    : Generating presigned upload URL: user=11, interview=95, question=258
-2026-03-30T11:21:24.982+05:30  INFO 59486 --- [mcat-handler-56] c.i.p.service.VideoStorageService        : Generated upload URL for key=interviews/11/95/response_258_1774849884982.webm
-2026-03-30T11:21:24.982+05:30  INFO 59486 --- [mcat-handler-56] c.i.platform.service.InterviewService    : Presigned PUT URL generated: s3Key=interviews/11/95/response_258_1774849884982.webm, interview=95, question=258
-2026-03-30T11:21:24.995+05:30  INFO 59486 --- [mcat-handler-58] c.i.platform.controller.FileController   : File uploaded via PUT (raw): key=interviews/11/95/response_258_1774849884982.webm, size=265554
-2026-03-30T11:21:25.003+05:30  INFO 59486 --- [mcat-handler-59] c.i.p.controller.InterviewController     : Confirming upload — user: 11, interview: 95, question: 258, s3Key: interviews/11/95/response_258_1774849884982.webm
-2026-03-30T11:21:25.005+05:30  INFO 59486 --- [mcat-handler-59] c.i.platform.service.InterviewService    : Confirming upload: user=11, interview=95, question=258, s3Key=interviews/11/95/response_258_1774849884982.webm
-2026-03-30T11:21:25.024+05:30  INFO 59486 --- [mcat-handler-59] c.i.platform.service.InterviewService    : Response saved for question 258: s3Key=interviews/11/95/response_258_1774849884982.webm
-2026-03-30T11:21:25.024+05:30  INFO 59486 --- [mcat-handler-59] c.i.platform.service.InterviewService    : Async transcription triggered for question 258
-2026-03-30T11:21:25.026+05:30  INFO 59486 --- [               ] c.i.p.service.SpeechToTextService        : Starting transcription for: interviews/11/95/response_258_1774849884982.webm
-2026-03-30T11:21:25.026+05:30  WARN 59486 --- [               ] c.i.p.service.SpeechToTextService        : Local development mode detected — AssemblyAI cannot access local files. Returning placeholder transcription for: interviews/11/95/response_258_1774849884982.webm
-2026-03-30T11:21:25.029+05:30  WARN 59486 --- [               ] c.i.p.service.SpeechToTextService        : No Response entity found for question 258 — transcription not persisted
-2026-03-30T11:21:25.038+05:30  INFO 59486 --- [mcat-handler-61] c.i.p.controller.InterviewController     : Submit answer and get next — user: 11, interview: 95, question: 258
-2026-03-30T11:21:25.039+05:30  INFO 59486 --- [mcat-handler-61] c.i.platform.service.InterviewService    : submitAnswerAndGetNext: user=11, interview=95, question=258
-2026-03-30T11:21:25.048+05:30  INFO 59486 --- [mcat-handler-61] c.i.platform.service.InterviewService    : Answer already exists for question 258 — skipping save
-2026-03-30T11:21:25.050+05:30  INFO 59486 --- [mcat-handler-61] c.i.platform.service.InterviewService    : Generating dynamic question 3 for interview 95
-2026-03-30T11:21:35.543+05:30  INFO 59486 --- [mcat-handler-61] c.i.platform.service.OllamaService       : Generated adaptive question 3: How would you approach designing a responsive UI for a touch... [TECHNICAL:MEDIUM]
-2026-03-30T11:21:35.560+05:30  INFO 59486 --- [mcat-handler-61] c.i.p.service.TextToSpeechService        : TTS cache MISS for question 259: textLength=242 chars
-2026-03-30T11:21:36.129+05:30  WARN 59486 --- [mcat-handler-61] c.i.p.service.TextToSpeechService        : ElevenLabs TTS call FAILED for question 259 — interview will proceed with text-only mode. Error: 401 Unauthorized: [no body]
-2026-03-30T11:21:36.130+05:30  INFO 59486 --- [mcat-handler-61] c.i.platform.service.InterviewService    : TTS audio generated for dynamic question 259 (interview 95)
-2026-03-30T11:21:50.689+05:30  INFO 59486 --- [mcat-handler-63] c.i.p.controller.InterviewController     : Completing interview — user: 11, interview: 95
-2026-03-30T11:21:50.693+05:30  INFO 59486 --- [mcat-handler-63] c.i.platform.service.InterviewService    : Completing interview ID: 95 for user: 11
-2026-03-30T11:21:50.706+05:30  INFO 59486 --- [mcat-handler-63] c.i.platform.service.InterviewService    : Interview ID: 95 status set to PROCESSING
-2026-03-30T11:21:50.707+05:30  INFO 59486 --- [               ] c.i.platform.service.AIFeedbackService   : Generating AI feedback for interview ID: 95
-2026-03-30T11:22:02.122+05:30  INFO 59486 --- [               ] c.i.platform.service.AIFeedbackService   : AI feedback generated for interview ID: 95 — score: 50
-2026-03-30T11:22:02.147+05:30  INFO 59486 --- [               ] c.i.platform.service.InterviewService    : Transitioned interview 95 to COMPLETED (attempt 1)
-2026-03-30T11:22:02.147+05:30  INFO 59486 --- [               ] c.i.platform.service.InterviewService    : Interview ID: 95 completed with score: 50
-2026-03-30T11:22:02.153+05:30  INFO 59486 --- [               ] c.i.p.service.VideoStorageService        : Deleted file: key=interviews/11/95/response_257_1774849847803.webm
-2026-03-30T11:22:02.166+05:30  WARN 59486 --- [               ] o.h.engine.jdbc.spi.SqlExceptionHelper   : SQL Error: 1048, SQLState: 23000
-2026-03-30T11:22:02.166+05:30 ERROR 59486 --- [               ] o.h.engine.jdbc.spi.SqlExceptionHelper   : Column 'video_url' cannot be null
-2026-03-30T11:22:02.178+05:30  WARN 59486 --- [               ] c.i.platform.service.InterviewService    : Failed to delete video file during cleanup: null - could not execute statement [Column 'video_url' cannot be null] [update responses set interview_id=?,question_id=?,transcription=?,transcription_confidence=?,user_id=?,video_duration=?,video_url=? where id=?]; SQL [update responses set interview_id=?,question_id=?,transcription=?,transcription_confidence=?,user_id=?,video_duration=?,video_url=? where id=?]; constraint [null]
-2026-03-30T11:22:02.179+05:30  INFO 59486 --- [               ] c.i.p.service.VideoStorageService        : Deleted file: key=interviews/11/95/response_258_1774849884982.webm
-2026-03-30T11:22:02.184+05:30  WARN 59486 --- [               ] o.h.engine.jdbc.spi.SqlExceptionHelper   : SQL Error: 1048, SQLState: 23000
-2026-03-30T11:22:02.184+05:30 ERROR 59486 --- [               ] o.h.engine.jdbc.spi.SqlExceptionHelper   : Column 'video_url' cannot be null
-2026-03-30T11:22:02.185+05:30  WARN 59486 --- [               ] c.i.platform.service.InterviewService    : Failed to delete video file during cleanup: null - could not execute statement [Column 'video_url' cannot be null] [update responses set interview_id=?,question_id=?,transcription=?,transcription_confidence=?,user_id=?,video_duration=?,video_url=? where id=?]; SQL [update responses set interview_id=?,question_id=?,transcription=?,transcription_confidence=?,user_id=?,video_duration=?,video_url=? where id=?]; constraint [null]
-2026-03-30T11:22:02.185+05:30  INFO 59486 --- [               ] c.i.platform.service.InterviewService    : Cleaned up 0 video files for interview ID: 95
-2026-03-30T11:32:18.449+05:30  WARN 59486 --- [l-1 housekeeper] com.zaxxer.hikari.pool.HikariPool        : HikariPool-1 - Thread starvation or clock leap detected (housekeeper delta=3m8s89ms).
-2026-03-30T11:32:58.121+05:30  INFO 59486 --- [ionShutdownHook] j.LocalContainerEntityManagerFactoryBean : Closing JPA EntityManagerFactory for persistence unit 'default'
-2026-03-30T11:32:58.123+05:30  INFO 59486 --- [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown initiated...
-2026-03-30T11:32:58.123+05:30  INFO 59486 --- [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown completed.
+2026-03-31T08:54:26.024+05:30  INFO 13403 --- [           main] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Starting...
+2026-03-31T08:54:26.101+05:30  INFO 13403 --- [           main] com.zaxxer.hikari.pool.HikariPool        : HikariPool-1 - Added connection com.mysql.cj.jdbc.ConnectionImpl@28e48b65
+2026-03-31T08:54:26.101+05:30  INFO 13403 --- [           main] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Start completed.
+2026-03-31T08:54:26.128+05:30  INFO 13403 --- [           main] o.f.c.internal.license.VersionPrinter    : Flyway Community Edition 9.22.3 by Redgate
+2026-03-31T08:54:26.128+05:30  INFO 13403 --- [           main] o.f.c.internal.license.VersionPrinter    : See release notes here: https://rd.gt/416ObMi
+2026-03-31T08:54:26.128+05:30  INFO 13403 --- [           main] o.f.c.internal.license.VersionPrinter    : 
+2026-03-31T08:54:26.141+05:30  INFO 13403 --- [           main] org.flywaydb.core.FlywayExecutor         : Database: jdbc:mysql://localhost:3306/interview_platform (MySQL 8.0)
+2026-03-31T08:54:26.173+05:30  INFO 13403 --- [           main] o.f.core.internal.command.DbMigrate      : Current version of schema `interview_platform`: 8
+2026-03-31T08:54:26.173+05:30  WARN 13403 --- [           main] o.f.core.internal.command.DbMigrate      : outOfOrder mode is active. Migration of schema `interview_platform` may not be reproducible.
+2026-03-31T08:54:26.175+05:30  INFO 13403 --- [           main] o.f.core.internal.command.DbMigrate      : Schema `interview_platform` is up to date. No migration necessary.
+2026-03-31T08:54:26.217+05:30  INFO 13403 --- [           main] o.hibernate.jpa.internal.util.LogHelper  : HHH000204: Processing PersistenceUnitInfo [name: default]
+2026-03-31T08:54:26.237+05:30  INFO 13403 --- [           main] org.hibernate.Version                    : HHH000412: Hibernate ORM core version 6.4.1.Final
+2026-03-31T08:54:26.248+05:30  INFO 13403 --- [           main] o.h.c.internal.RegionFactoryInitiator    : HHH000026: Second-level cache disabled
+2026-03-31T08:54:26.310+05:30  INFO 13403 --- [           main] o.s.o.j.p.SpringPersistenceUnitInfo      : No LoadTimeWeaver setup: ignoring JPA class transformer
+2026-03-31T08:54:26.332+05:30  WARN 13403 --- [           main] org.hibernate.orm.deprecation            : HHH90000025: MySQLDialect does not need to be specified explicitly using 'hibernate.dialect' (remove the property setting and it will be selected by default)
+2026-03-31T08:54:26.648+05:30  INFO 13403 --- [           main] o.h.e.t.j.p.i.JtaPlatformInitiator       : HHH000489: No JTA platform available (set 'hibernate.transaction.jta.platform' to enable JTA platform integration)
+2026-03-31T08:54:26.665+05:30  INFO 13403 --- [           main] j.LocalContainerEntityManagerFactoryBean : Initialized JPA EntityManagerFactory for persistence unit 'default'
+2026-03-31T08:54:26.674+05:30  INFO 13403 --- [           main] c.i.platform.config.InterviewConfig      : Hybrid interview configuration loaded: pregenCount=1, generationTimeoutMs=15000
+2026-03-31T08:54:26.691+05:30  INFO 13403 --- [           main] c.i.platform.config.SecurityConfig       : CORS configured with allowed origins: http://localhost:3002
+2026-03-31T08:54:26.694+05:30  INFO 13403 --- [           main] c.i.platform.config.StorageConfig        : Local file storage initialized: path=/Users/shresthchauhan/Documents/Projects/ai Interview/ai-interveiwprep/backend/uploads (configured as './uploads'), baseUrl=http://localhost:8081
+2026-03-31T08:54:26.945+05:30  INFO 13403 --- [           main] c.i.platform.controller.FileController   : FileController initialized with storage root: /Users/shresthchauhan/Documents/Projects/ai Interview/ai-interveiwprep/backend/uploads
+2026-03-31T08:54:26.962+05:30  INFO 13403 --- [           main] o.s.d.j.r.query.QueryEnhancerFactory     : Hibernate is in classpath; If applicable, HQL parser will be used.
+2026-03-31T08:54:27.120+05:30  INFO 13403 --- [           main] c.i.platform.config.ResilienceConfig     : Resilience4j RetryRegistry initialized: maxAttempts=3, waitDuration=1000ms, backoffMultiplier=2.0
+2026-03-31T08:54:27.131+05:30  INFO 13403 --- [           main] c.i.platform.config.ResilienceConfig     : Resilience4j CircuitBreakerRegistry initialized: failureRateThreshold=50.0%, slidingWindowSize=10, waitDurationInOpenState=60s
+2026-03-31T08:54:27.157+05:30  INFO 13403 --- [           main] c.i.platform.service.OllamaService       : Ollama is running and reachable at http://localhost:11434 (status=200 OK)
+2026-03-31T08:54:27.161+05:30  INFO 13403 --- [           main] c.i.p.service.VideoStorageService        : VideoStorageService initialized with basePath: /Users/shresthchauhan/Documents/Projects/ai Interview/ai-interveiwprep/backend/uploads
+2026-03-31T08:54:27.282+05:30  WARN 13403 --- [           main] JpaBaseConfiguration$JpaWebConfiguration : spring.jpa.open-in-view is enabled by default. Therefore, database queries may be performed during view rendering. Explicitly configure spring.jpa.open-in-view to disable this warning
+2026-03-31T08:54:27.451+05:30  INFO 13403 --- [           main] o.s.b.a.e.web.EndpointLinksResolver      : Exposing 1 endpoint(s) beneath base path '/actuator'
+2026-03-31T08:54:27.498+05:30  INFO 13403 --- [           main] o.s.s.web.DefaultSecurityFilterChain     : Will secure any request with [org.springframework.security.web.session.DisableEncodeUrlFilter@74d56a25, org.springframework.security.web.context.request.async.WebAsyncManagerIntegrationFilter@66589578, org.springframework.security.web.context.SecurityContextHolderFilter@22ecee76, org.springframework.security.web.header.HeaderWriterFilter@2ca08575, org.springframework.web.filter.CorsFilter@4ce6f39e, org.springframework.security.web.authentication.logout.LogoutFilter@3f2f5454, com.interview.platform.config.JwtAuthenticationFilter@47c96f2c, org.springframework.security.web.savedrequest.RequestCacheAwareFilter@4bc01cab, org.springframework.security.web.servletapi.SecurityContextHolderAwareRequestFilter@623c62b9, org.springframework.security.web.authentication.AnonymousAuthenticationFilter@68f2ccb2, org.springframework.security.web.session.SessionManagementFilter@21f9d977, org.springframework.security.web.access.ExceptionTranslationFilter@3a94d716, org.springframework.security.web.access.intercept.AuthorizationFilter@299a2968]
+2026-03-31T08:54:27.832+05:30  INFO 13403 --- [           main] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat started on port 8081 (http) with context path ''
+2026-03-31T08:54:27.839+05:30  INFO 13403 --- [           main] c.i.p.InterviewPlatformApplication       : Started InterviewPlatformApplication in 2.85 seconds (process running for 2.958)
+2026-03-31T08:54:28.425+05:30  INFO 13403 --- [omcat-handler-0] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring DispatcherServlet 'dispatcherServlet'
+2026-03-31T08:54:28.425+05:30  INFO 13403 --- [omcat-handler-0] o.s.web.servlet.DispatcherServlet        : Initializing Servlet 'dispatcherServlet'
+2026-03-31T08:54:28.426+05:30  INFO 13403 --- [omcat-handler-0] o.s.web.servlet.DispatcherServlet        : Completed initialization in 1 ms
+2026-03-31T08:54:58.546+05:30  INFO 13403 --- [mcat-handler-30] c.i.p.controller.InterviewController     : Starting interview — user: 11, resume: 11, jobRole: 1, numQuestions: 3, difficulty: EASY
+2026-03-31T08:54:58.550+05:30  INFO 13403 --- [mcat-handler-30] c.i.platform.service.InterviewService    : Starting interview for user: 11, resume: 11, jobRole: 1, numQuestions: 3, difficulty: EASY
+2026-03-31T08:54:58.588+05:30  INFO 13403 --- [mcat-handler-30] c.i.platform.service.InterviewService    : Interview created with ID: 98 (status=CREATED)
+2026-03-31T08:54:58.588+05:30  INFO 13403 --- [mcat-handler-30] c.i.platform.service.InterviewService    : Interview 98 using HYBRID mode: pregenCount=1, totalQuestions=3
+2026-03-31T08:55:11.926+05:30  INFO 13403 --- [mcat-handler-30] c.i.p.service.TextToSpeechService        : TTS cache MISS for question 268: textLength=46 chars
+2026-03-31T08:55:14.939+05:30  WARN 13403 --- [mcat-handler-30] c.i.p.service.TextToSpeechService        : ElevenLabs TTS call FAILED for question 268 — interview will proceed with text-only mode. Error: 401 Unauthorized: [no body]
+2026-03-31T08:55:14.941+05:30  INFO 13403 --- [mcat-handler-30] c.i.platform.service.InterviewService    : TTS audio generated for question 268 (interview 98)
+2026-03-31T08:55:14.941+05:30  INFO 13403 --- [mcat-handler-30] c.i.platform.service.InterviewService    : Saved 1 questions for interview ID: 98
+2026-03-31T08:55:14.943+05:30  INFO 13403 --- [mcat-handler-30] c.i.platform.service.InterviewService    : Interview 98 transitioned to IN_PROGRESS
+2026-03-31T08:55:14.945+05:30  INFO 13403 --- [mcat-handler-30] c.i.platform.service.InterviewService    : QuestionsCreatedEvent published for interview ID: 98 with 1 question IDs
+2026-03-31T08:55:14.977+05:30  INFO 13403 --- [               ] c.i.p.event.AvatarPipelineListener       : Avatar pipeline started: interviewId=98, questionCount=1
+2026-03-31T08:55:15.112+05:30  INFO 13403 --- [mcat-handler-38] c.i.p.controller.InterviewController     : SSE ticket generated: interviewId=98, userId=11
+2026-03-31T08:55:15.112+05:30  INFO 13403 --- [mcat-handler-37] c.i.p.controller.InterviewController     : SSE ticket generated: interviewId=98, userId=11
+2026-03-31T08:55:15.463+05:30  WARN 13403 --- [               ] c.i.p.service.TextToSpeechService        : TTS audio generation failed for question 268: 401 Unauthorized: [no body]
+2026-03-31T08:55:15.476+05:30  INFO 13403 --- [               ] c.i.p.event.AvatarPipelineListener       : TTS audio set for question 268: audioUrl=null
+2026-03-31T08:55:15.485+05:30  WARN 13403 --- [               ] c.i.p.event.AvatarPipelineListener       : Interview 98 is not in GENERATING_VIDEOS (current=IN_PROGRESS), skipping transition to IN_PROGRESS
+2026-03-31T08:55:15.485+05:30  INFO 13403 --- [               ] c.i.p.event.AvatarPipelineListener       : Avatar pipeline completed: interviewId=98, success=1, failed=0, elapsed=508ms
+2026-03-31T08:55:38.870+05:30  INFO 13403 --- [mcat-handler-42] c.i.p.controller.InterviewController     : Generating upload URL — user: 11, interview: 98, question: 268
+2026-03-31T08:55:38.876+05:30  INFO 13403 --- [mcat-handler-42] c.i.platform.service.InterviewService    : Generating presigned upload URL: user=11, interview=98, question=268
+2026-03-31T08:55:38.893+05:30  INFO 13403 --- [mcat-handler-42] c.i.p.service.VideoStorageService        : Generated upload URL for key=interviews/11/98/response_268_1774927538893.webm
+2026-03-31T08:55:38.893+05:30  INFO 13403 --- [mcat-handler-42] c.i.platform.service.InterviewService    : Presigned PUT URL generated: s3Key=interviews/11/98/response_268_1774927538893.webm, interview=98, question=268
+2026-03-31T08:55:38.927+05:30  INFO 13403 --- [mcat-handler-44] c.i.platform.controller.FileController   : File uploaded via PUT (raw): key=interviews/11/98/response_268_1774927538893.webm, size=3377284
+2026-03-31T08:55:38.958+05:30  INFO 13403 --- [mcat-handler-46] c.i.p.controller.InterviewController     : Confirming upload — user: 11, interview: 98, question: 268, s3Key: interviews/11/98/response_268_1774927538893.webm
+2026-03-31T08:55:38.961+05:30  INFO 13403 --- [mcat-handler-46] c.i.platform.service.InterviewService    : Confirming upload: user=11, interview=98, question=268, s3Key=interviews/11/98/response_268_1774927538893.webm
+2026-03-31T08:55:38.977+05:30  INFO 13403 --- [mcat-handler-46] c.i.platform.service.InterviewService    : Response saved for question 268: s3Key=interviews/11/98/response_268_1774927538893.webm
+2026-03-31T08:55:38.978+05:30  INFO 13403 --- [mcat-handler-46] c.i.platform.service.InterviewService    : Async transcription triggered for question 268
+2026-03-31T08:55:38.980+05:30  INFO 13403 --- [               ] c.i.p.service.SpeechToTextService        : Starting transcription for: interviews/11/98/response_268_1774927538893.webm
+2026-03-31T08:55:38.980+05:30  WARN 13403 --- [               ] c.i.p.service.SpeechToTextService        : Local development mode detected — AssemblyAI cannot access local files. Returning placeholder transcription for: interviews/11/98/response_268_1774927538893.webm
+2026-03-31T08:55:38.983+05:30  WARN 13403 --- [               ] c.i.p.service.SpeechToTextService        : No Response entity found for question 268 — transcription not persisted
+2026-03-31T08:56:09.435+05:30  INFO 13403 --- [mcat-handler-64] c.i.p.controller.InterviewController     : Submit answer and get next — user: 11, interview: 98, question: 268
+2026-03-31T08:56:09.440+05:30  INFO 13403 --- [mcat-handler-64] c.i.platform.service.InterviewService    : submitAnswerAndGetNext: user=11, interview=98, question=268
+2026-03-31T08:56:09.455+05:30  INFO 13403 --- [mcat-handler-64] c.i.platform.service.InterviewService    : Updated transcription for existing response on question 268 (interview 98)
+2026-03-31T08:56:09.459+05:30  INFO 13403 --- [mcat-handler-64] c.i.platform.service.InterviewService    : Generating dynamic question 2 for interview 98
+2026-03-31T08:56:23.355+05:30  INFO 13403 --- [mcat-handler-64] c.i.platform.service.OllamaService       : Generated adaptive question 2: What is the difference between a variable and a constant in ... [TECHNICAL:EASY]
+2026-03-31T08:56:23.383+05:30  INFO 13403 --- [mcat-handler-64] c.i.p.service.TextToSpeechService        : TTS cache MISS for question 269: textLength=72 chars
+2026-03-31T08:56:23.856+05:30  WARN 13403 --- [mcat-handler-64] c.i.p.service.TextToSpeechService        : ElevenLabs TTS call FAILED for question 269 — interview will proceed with text-only mode. Error: 401 Unauthorized: [no body]
+2026-03-31T08:56:23.857+05:30  INFO 13403 --- [mcat-handler-64] c.i.platform.service.InterviewService    : TTS audio generated for dynamic question 269 (interview 98)
+2026-03-31T08:56:50.570+05:30  INFO 13403 --- [mcat-handler-66] c.i.p.controller.InterviewController     : Generating upload URL — user: 11, interview: 98, question: 269
+2026-03-31T08:56:50.584+05:30  INFO 13403 --- [mcat-handler-66] c.i.platform.service.InterviewService    : Generating presigned upload URL: user=11, interview=98, question=269
+2026-03-31T08:56:50.598+05:30  INFO 13403 --- [mcat-handler-66] c.i.p.service.VideoStorageService        : Generated upload URL for key=interviews/11/98/response_269_1774927610598.webm
+2026-03-31T08:56:50.598+05:30  INFO 13403 --- [mcat-handler-66] c.i.platform.service.InterviewService    : Presigned PUT URL generated: s3Key=interviews/11/98/response_269_1774927610598.webm, interview=98, question=269
+2026-03-31T08:56:50.628+05:30  INFO 13403 --- [mcat-handler-68] c.i.platform.controller.FileController   : File uploaded via PUT (raw): key=interviews/11/98/response_269_1774927610598.webm, size=4451717
+2026-03-31T08:56:50.634+05:30  INFO 13403 --- [mcat-handler-69] c.i.p.controller.InterviewController     : Confirming upload — user: 11, interview: 98, question: 269, s3Key: interviews/11/98/response_269_1774927610598.webm
+2026-03-31T08:56:50.636+05:30  INFO 13403 --- [mcat-handler-69] c.i.platform.service.InterviewService    : Confirming upload: user=11, interview=98, question=269, s3Key=interviews/11/98/response_269_1774927610598.webm
+2026-03-31T08:56:50.648+05:30  INFO 13403 --- [mcat-handler-69] c.i.platform.service.InterviewService    : Response saved for question 269: s3Key=interviews/11/98/response_269_1774927610598.webm
+2026-03-31T08:56:50.648+05:30  INFO 13403 --- [mcat-handler-69] c.i.platform.service.InterviewService    : Async transcription triggered for question 269
+2026-03-31T08:56:50.651+05:30  INFO 13403 --- [               ] c.i.p.service.SpeechToTextService        : Starting transcription for: interviews/11/98/response_269_1774927610598.webm
+2026-03-31T08:56:50.652+05:30  WARN 13403 --- [               ] c.i.p.service.SpeechToTextService        : Local development mode detected — AssemblyAI cannot access local files. Returning placeholder transcription for: interviews/11/98/response_269_1774927610598.webm
+2026-03-31T08:56:50.654+05:30  WARN 13403 --- [               ] c.i.p.service.SpeechToTextService        : No Response entity found for question 269 — transcription not persisted
+2026-03-31T08:57:21.129+05:30  INFO 13403 --- [mcat-handler-87] c.i.p.controller.InterviewController     : Submit answer and get next — user: 11, interview: 98, question: 269
+2026-03-31T08:57:21.134+05:30  INFO 13403 --- [mcat-handler-87] c.i.platform.service.InterviewService    : submitAnswerAndGetNext: user=11, interview=98, question=269
+2026-03-31T08:57:21.146+05:30  INFO 13403 --- [mcat-handler-87] c.i.platform.service.InterviewService    : Updated transcription for existing response on question 269 (interview 98)
+2026-03-31T08:57:21.151+05:30  INFO 13403 --- [mcat-handler-87] c.i.platform.service.InterviewService    : Generating dynamic question 3 for interview 98
+2026-03-31T08:57:29.876+05:30  INFO 13403 --- [mcat-handler-87] c.i.platform.service.OllamaService       : Generated adaptive question 3: What is the purpose of comments in programming and how do yo... [TECHNICAL:EASY]
+2026-03-31T08:57:29.907+05:30  INFO 13403 --- [mcat-handler-87] c.i.p.service.TextToSpeechService        : TTS cache MISS for question 270: textLength=81 chars
+2026-03-31T08:57:31.620+05:30  WARN 13403 --- [mcat-handler-87] c.i.p.service.TextToSpeechService        : ElevenLabs TTS call FAILED for question 270 — interview will proceed with text-only mode. Error: 401 Unauthorized: [no body]
+2026-03-31T08:57:31.622+05:30  INFO 13403 --- [mcat-handler-87] c.i.platform.service.InterviewService    : TTS audio generated for dynamic question 270 (interview 98)
+2026-03-31T08:57:54.247+05:30  INFO 13403 --- [mcat-handler-89] c.i.p.controller.InterviewController     : Generating upload URL — user: 11, interview: 98, question: 270
+2026-03-31T08:57:54.255+05:30  INFO 13403 --- [mcat-handler-89] c.i.platform.service.InterviewService    : Generating presigned upload URL: user=11, interview=98, question=270
+2026-03-31T08:57:54.268+05:30  INFO 13403 --- [mcat-handler-89] c.i.p.service.VideoStorageService        : Generated upload URL for key=interviews/11/98/response_270_1774927674268.webm
+2026-03-31T08:57:54.268+05:30  INFO 13403 --- [mcat-handler-89] c.i.platform.service.InterviewService    : Presigned PUT URL generated: s3Key=interviews/11/98/response_270_1774927674268.webm, interview=98, question=270
+2026-03-31T08:57:54.291+05:30  INFO 13403 --- [mcat-handler-91] c.i.platform.controller.FileController   : File uploaded via PUT (raw): key=interviews/11/98/response_270_1774927674268.webm, size=3764256
+2026-03-31T08:57:54.315+05:30  INFO 13403 --- [mcat-handler-92] c.i.p.controller.InterviewController     : Confirming upload — user: 11, interview: 98, question: 270, s3Key: interviews/11/98/response_270_1774927674268.webm
+2026-03-31T08:57:54.317+05:30  INFO 13403 --- [mcat-handler-92] c.i.platform.service.InterviewService    : Confirming upload: user=11, interview=98, question=270, s3Key=interviews/11/98/response_270_1774927674268.webm
+2026-03-31T08:57:54.330+05:30  INFO 13403 --- [mcat-handler-92] c.i.platform.service.InterviewService    : Response saved for question 270: s3Key=interviews/11/98/response_270_1774927674268.webm
+2026-03-31T08:57:54.330+05:30  INFO 13403 --- [mcat-handler-92] c.i.platform.service.InterviewService    : Async transcription triggered for question 270
+2026-03-31T08:57:54.333+05:30  INFO 13403 --- [               ] c.i.p.service.SpeechToTextService        : Starting transcription for: interviews/11/98/response_270_1774927674268.webm
+2026-03-31T08:57:54.333+05:30  WARN 13403 --- [               ] c.i.p.service.SpeechToTextService        : Local development mode detected — AssemblyAI cannot access local files. Returning placeholder transcription for: interviews/11/98/response_270_1774927674268.webm
+2026-03-31T08:57:54.335+05:30  WARN 13403 --- [               ] c.i.p.service.SpeechToTextService        : No Response entity found for question 270 — transcription not persisted
+2026-03-31T08:58:24.765+05:30  INFO 13403 --- [cat-handler-110] c.i.p.controller.InterviewController     : Submit answer and get next — user: 11, interview: 98, question: 270
+2026-03-31T08:58:24.770+05:30  INFO 13403 --- [cat-handler-110] c.i.platform.service.InterviewService    : submitAnswerAndGetNext: user=11, interview=98, question=270
+2026-03-31T08:58:24.780+05:30  INFO 13403 --- [cat-handler-110] c.i.platform.service.InterviewService    : Updated transcription for existing response on question 270 (interview 98)
+2026-03-31T08:58:24.780+05:30  INFO 13403 --- [cat-handler-110] c.i.platform.service.InterviewService    : Interview 98 complete after question 3
+2026-03-31T08:58:24.834+05:30  INFO 13403 --- [cat-handler-112] c.i.p.controller.InterviewController     : Completing interview — user: 11, interview: 98
+2026-03-31T08:58:24.836+05:30  INFO 13403 --- [cat-handler-112] c.i.platform.service.InterviewService    : Completing interview ID: 98 for user: 11
+2026-03-31T08:58:24.846+05:30  INFO 13403 --- [cat-handler-112] c.i.platform.service.InterviewService    : Interview ID: 98 status set to PROCESSING
+2026-03-31T08:58:24.847+05:30  INFO 13403 --- [               ] c.i.platform.service.AIFeedbackService   : Generating AI feedback for interview ID: 98
+2026-03-31T08:58:38.027+05:30  INFO 13403 --- [               ] c.i.platform.service.AIFeedbackService   : AI feedback generated for interview ID: 98 — score: 65
+2026-03-31T08:58:38.036+05:30  INFO 13403 --- [               ] c.i.platform.service.InterviewService    : Transitioned interview 98 to COMPLETED (attempt 1)
+2026-03-31T08:58:38.036+05:30  INFO 13403 --- [               ] c.i.platform.service.InterviewService    : Interview ID: 98 completed with score: 65
+2026-03-31T08:58:38.039+05:30  INFO 13403 --- [               ] c.i.p.service.VideoStorageService        : Deleted file: key=interviews/11/98/response_268_1774927538893.webm
+2026-03-31T08:58:38.044+05:30  WARN 13403 --- [               ] o.h.engine.jdbc.spi.SqlExceptionHelper   : SQL Error: 1048, SQLState: 23000
+2026-03-31T08:58:38.044+05:30 ERROR 13403 --- [               ] o.h.engine.jdbc.spi.SqlExceptionHelper   : Column 'video_url' cannot be null
+2026-03-31T08:58:38.052+05:30  WARN 13403 --- [               ] c.i.platform.service.InterviewService    : Failed to delete video file during cleanup: null - could not execute statement [Column 'video_url' cannot be null] [update responses set interview_id=?,question_id=?,transcription=?,transcription_confidence=?,user_id=?,video_duration=?,video_url=? where id=?]; SQL [update responses set interview_id=?,question_id=?,transcription=?,transcription_confidence=?,user_id=?,video_duration=?,video_url=? where id=?]; constraint [null]
+2026-03-31T08:58:38.054+05:30  INFO 13403 --- [               ] c.i.p.service.VideoStorageService        : Deleted file: key=interviews/11/98/response_269_1774927610598.webm
+2026-03-31T08:58:38.056+05:30  WARN 13403 --- [               ] o.h.engine.jdbc.spi.SqlExceptionHelper   : SQL Error: 1048, SQLState: 23000
+2026-03-31T08:58:38.056+05:30 ERROR 13403 --- [               ] o.h.engine.jdbc.spi.SqlExceptionHelper   : Column 'video_url' cannot be null
+2026-03-31T08:58:38.058+05:30  WARN 13403 --- [               ] c.i.platform.service.InterviewService    : Failed to delete video file during cleanup: null - could not execute statement [Column 'video_url' cannot be null] [update responses set interview_id=?,question_id=?,transcription=?,transcription_confidence=?,user_id=?,video_duration=?,video_url=? where id=?]; SQL [update responses set interview_id=?,question_id=?,transcription=?,transcription_confidence=?,user_id=?,video_duration=?,video_url=? where id=?]; constraint [null]
+2026-03-31T08:58:38.058+05:30  INFO 13403 --- [               ] c.i.p.service.VideoStorageService        : Deleted file: key=interviews/11/98/response_270_1774927674268.webm
+2026-03-31T08:58:38.061+05:30  WARN 13403 --- [               ] o.h.engine.jdbc.spi.SqlExceptionHelper   : SQL Error: 1048, SQLState: 23000
+2026-03-31T08:58:38.061+05:30 ERROR 13403 --- [               ] o.h.engine.jdbc.spi.SqlExceptionHelper   : Column 'video_url' cannot be null
+2026-03-31T08:58:38.062+05:30  WARN 13403 --- [               ] c.i.platform.service.InterviewService    : Failed to delete video file during cleanup: null - could not execute statement [Column 'video_url' cannot be null] [update responses set interview_id=?,question_id=?,transcription=?,transcription_confidence=?,user_id=?,video_duration=?,video_url=? where id=?]; SQL [update responses set interview_id=?,question_id=?,transcription=?,transcription_confidence=?,user_id=?,video_duration=?,video_url=? where id=?]; constraint [null]
+2026-03-31T08:58:38.062+05:30  INFO 13403 --- [               ] c.i.platform.service.InterviewService    : Cleaned up 0 video files for interview ID: 98
+2026-03-31T09:01:36.146+05:30  INFO 13403 --- [ionShutdownHook] j.LocalContainerEntityManagerFactoryBean : Closing JPA EntityManagerFactory for persistence unit 'default'
+2026-03-31T09:01:36.149+05:30  INFO 13403 --- [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown initiated...
+2026-03-31T09:01:36.149+05:30  INFO 13403 --- [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown completed.
 [INFO] ------------------------------------------------------------------------
 [INFO] BUILD FAILURE
 [INFO] ------------------------------------------------------------------------
-[INFO] Total time:  18:50 min
-[INFO] Finished at: 2026-03-30T11:32:58+05:30
+[INFO] Total time:  07:12 min
+[INFO] Finished at: 2026-03-31T09:01:36+05:30
 [INFO] ------------------------------------------------------------------------
 [ERROR] Failed to execute goal org.springframework.boot:spring-boot-maven-plugin:3.2.2:run (default-cli) on project platform: Process terminated with exit code: 143 -> [Help 1]
 [ERROR] 

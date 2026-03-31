@@ -135,11 +135,11 @@ public class InterviewController {
             HttpServletRequest httpRequest) {
 
         Long userId = getUserIdFromRequest(httpRequest);
-        log.info("Starting interview — user: {}, resume: {}, jobRole: {}, numQuestions: {}",
-                userId, request.getResumeId(), request.getJobRoleId(), request.getNumQuestions());
+        log.info("Starting interview — user: {}, resume: {}, jobRole: {}, numQuestions: {}, difficulty: {}",
+                userId, request.getResumeId(), request.getJobRoleId(), request.getNumQuestions(), request.getDifficulty());
 
         InterviewDTO interview = interviewService.startInterview(
-                userId, request.getResumeId(), request.getJobRoleId(), request.getNumQuestions());
+                userId, request.getResumeId(), request.getJobRoleId(), request.getNumQuestions(), request.getDifficulty());
 
         return new ResponseEntity<>(interview, HttpStatus.CREATED);
     }

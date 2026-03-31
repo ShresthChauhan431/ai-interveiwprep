@@ -7,6 +7,7 @@ import com.interview.platform.dto.QuestionDTO;
 import com.interview.platform.event.QuestionsCreatedEvent;
 import com.interview.platform.model.*;
 import com.interview.platform.repository.*;
+import com.interview.platform.config.InterviewConfig;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -65,6 +66,8 @@ class InterviewServiceTest {
         private TextToSpeechService textToSpeechService; // FIX: Added missing mock — TTS is now injected into
                                                          // InterviewService
         @Mock
+        private InterviewConfig interviewConfig; // FIX: Added missing mock for hybrid interview config
+        @Mock
         private ApplicationEventPublisher eventPublisher;
 
         @InjectMocks
@@ -109,6 +112,12 @@ class InterviewServiceTest {
                 testQuestion.setQuestionNumber(1);
                 testQuestion.setCategory("Technical");
                 testQuestion.setDifficulty("Medium");
+
+                // FIX: Configure InterviewConfig mock with lenient() to avoid unnecessary stubbing errors
+                lenient().when(interviewConfig.getPregenCount()).thenReturn(1);
+                lenient().when(interviewConfig.getGenerationTimeoutMs()).thenReturn(15000L);
+                lenient().when(interviewConfig.isHybridModeEnabled(anyInt())).thenReturn(true);
+                lenient().when(interviewConfig.isDynamicQuestion(anyInt())).thenReturn(false);
         }
 
         // ============================================================
@@ -136,21 +145,16 @@ class InterviewServiceTest {
                                 return saved;
                         });
 
+                        // FIX: Only return 1 question matching pregenCount=1
                         Question q1 = new Question();
                         q1.setQuestionText("Tell me about your experience with Spring Boot.");
                         q1.setCategory("Technical");
                         q1.setDifficulty("Medium");
                         q1.setQuestionNumber(1);
 
-                        Question q2 = new Question();
-                        q2.setQuestionText("Describe a challenging project.");
-                        q2.setCategory("Behavioral");
-                        q2.setDifficulty("Easy");
-                        q2.setQuestionNumber(2);
-
                         when(ollamaService.generateQuestionsWithResilience(any(Resume.class), any(JobRole.class),
-                                        anyInt()))
-                                        .thenReturn(List.of(q1, q2));
+                                        anyInt(), anyString()))
+                                        .thenReturn(List.of(q1));
 
                         when(questionRepository.save(any(Question.class))).thenAnswer(invocation -> {
                                 Question q = invocation.getArgument(0);
@@ -165,12 +169,13 @@ class InterviewServiceTest {
                         when(responseRepository.findByQuestionId(anyLong())).thenReturn(Optional.empty());
 
                         // Act
-                        InterviewDTO result = interviewService.startInterview(1L, 10L, 5L, 5);
+                        InterviewDTO result = interviewService.startInterview(1L, 10L, 5L, 5, "MEDIUM");
 
                         // Assert
                         assertThat(result).isNotNull();
                         assertThat(result.getInterviewId()).isEqualTo(100L);
-                        assertThat(result.getQuestions()).hasSize(2);
+                        // FIX: Only 1 question is pre-generated (pregenCount=1 in hybrid mode)
+                        assertThat(result.getQuestions()).hasSize(1);
 
                         // FIX: Service now starts as CREATED then transitions to IN_PROGRESS (not
                         // GENERATING_VIDEOS)
@@ -179,18 +184,19 @@ class InterviewServiceTest {
                                         .save(argThat(interview -> interview.getStatus() == InterviewStatus.IN_PROGRESS
                                                         || interview.getStatus() == InterviewStatus.CREATED));
 
-                        verify(ollamaService).generateQuestionsWithResilience(testResume, testJobRole, 5);
-                        // FIX: Each question is saved twice — once to get its ID, once after TTS audio
-                        // is set
-                        verify(questionRepository, times(4)).save(any(Question.class));
-                        // FIX: Verify TTS was called for each question
-                        verify(textToSpeechService, times(2)).generateSpeech(anyString(), anyLong());
+                        // FIX: Ollama generates pregenCount (1) questions in hybrid mode
+                        verify(ollamaService).generateQuestionsWithResilience(eq(testResume), eq(testJobRole), eq(1), eq("MEDIUM"));
+                        // Each question is saved twice — once to get its ID, once after TTS audio
+                        verify(questionRepository, times(2)).save(any(Question.class));
+                        // FIX: TTS is called for each pre-generated question
+                        verify(textToSpeechService, times(1)).generateSpeech(anyString(), anyLong());
 
                         // Verify QuestionsCreatedEvent was published
                         verify(eventPublisher).publishEvent(eventCaptor.capture());
                         QuestionsCreatedEvent capturedEvent = eventCaptor.getValue();
                         assertThat(capturedEvent.getInterviewId()).isEqualTo(100L);
-                        assertThat(capturedEvent.getQuestionIds()).hasSize(2);
+                        // FIX: Only 1 question ID in hybrid mode
+                        assertThat(capturedEvent.getQuestionIds()).hasSize(1);
                 }
 
                 @Test
@@ -198,7 +204,7 @@ class InterviewServiceTest {
                 void testStartInterview_UserNotFound() {
                         when(userRepository.findById(999L)).thenReturn(Optional.empty());
 
-                        assertThatThrownBy(() -> interviewService.startInterview(999L, 10L, 5L, 5))
+                        assertThatThrownBy(() -> interviewService.startInterview(999L, 10L, 5L, 5, "MEDIUM"))
                                         .isInstanceOf(RuntimeException.class)
                                         .hasMessageContaining("User not found");
                 }
@@ -214,7 +220,7 @@ class InterviewServiceTest {
                         when(userRepository.findById(1L)).thenReturn(Optional.of(testUser));
                         when(resumeRepository.findById(11L)).thenReturn(Optional.of(otherResume));
 
-                        assertThatThrownBy(() -> interviewService.startInterview(1L, 11L, 5L, 5))
+                        assertThatThrownBy(() -> interviewService.startInterview(1L, 11L, 5L, 5, "MEDIUM"))
                                         .isInstanceOf(RuntimeException.class)
                                         .hasMessageContaining("Resume does not belong to user");
                 }
@@ -244,7 +250,7 @@ class InterviewServiceTest {
                                 return saved;
                         });
                         when(ollamaService.generateQuestionsWithResilience(any(Resume.class), any(JobRole.class),
-                                        anyInt()))
+                                        anyInt(), anyString()))
                                         .thenReturn(List.of(q1));
                         when(questionRepository.save(any(Question.class))).thenAnswer(invocation -> {
                                 Question q = invocation.getArgument(0);
@@ -256,11 +262,11 @@ class InterviewServiceTest {
                         when(responseRepository.findByQuestionId(anyLong())).thenReturn(Optional.empty());
 
                         // Act — should NOT throw; interview proceeds with fallback text
-                        InterviewDTO result = interviewService.startInterview(1L, 10L, 5L, 5);
+                        InterviewDTO result = interviewService.startInterview(1L, 10L, 5L, 5, "EASY");
 
                         assertThat(result).isNotNull();
                         // Ollama was still called despite empty resume (using fallback text)
-                        verify(ollamaService).generateQuestionsWithResilience(any(), any(), anyInt());
+                        verify(ollamaService).generateQuestionsWithResilience(any(), any(), anyInt(), anyString());
                 }
 
                 @Test
@@ -277,11 +283,11 @@ class InterviewServiceTest {
                                         saved.setId(100L);
                                 return saved;
                         });
-                        when(ollamaService.generateQuestionsWithResilience(any(), any(), anyInt()))
+                        when(ollamaService.generateQuestionsWithResilience(any(), any(), anyInt(), anyString()))
                                         .thenThrow(new ResourceAccessException("Connection refused"));
 
                         // Act & Assert
-                        assertThatThrownBy(() -> interviewService.startInterview(1L, 10L, 5L, 5))
+                        assertThatThrownBy(() -> interviewService.startInterview(1L, 10L, 5L, 5, "MEDIUM"))
                                         .isInstanceOf(RuntimeException.class)
                                         .hasMessageContaining("ollama serve"); // actionable hint in the message
 
@@ -312,7 +318,7 @@ class InterviewServiceTest {
                         q1.setQuestionNumber(1);
 
                         when(ollamaService.generateQuestionsWithResilience(any(Resume.class), any(JobRole.class),
-                                        anyInt()))
+                                        anyInt(), anyString()))
                                         .thenReturn(List.of(q1));
                         when(questionRepository.save(any(Question.class))).thenAnswer(invocation -> {
                                 Question q = invocation.getArgument(0);
@@ -325,7 +331,7 @@ class InterviewServiceTest {
                         when(responseRepository.findByQuestionId(anyLong())).thenReturn(Optional.empty());
 
                         // Act
-                        interviewService.startInterview(1L, 10L, 5L, 5);
+                        interviewService.startInterview(1L, 10L, 5L, 5, "EASY");
 
                         // Assert: AvatarVideoService is NOT injected and NOT called.
                         // The event publisher should be called instead.

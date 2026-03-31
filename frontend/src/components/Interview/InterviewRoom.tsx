@@ -29,6 +29,7 @@ import {
   Replay,
   Stop,
   AutoAwesome, // HYBRID: Icon for dynamic question generation indicator
+  FiberManualRecord, // SESSION: Icon for session recording indicator
 } from "@mui/icons-material";
 import { InterviewDTO, InterviewQuestion } from "../../types";
 import { interviewService } from "../../services/interview.service";
@@ -40,6 +41,7 @@ import { useInterviewEvents } from "../../hooks/useInterviewEvents";
 import { useProctoring } from "../../hooks/useProctoring"; // FIX: Import proctoring hook for surveillance system (Issue 3)
 import { ProctoringWarning } from "./ProctoringWarning"; // FIX: Import proctoring warning overlay component (Issue 3)
 import { useHybridInterview } from "../../hooks/useHybridInterview"; // HYBRID: Import hybrid interview hook for dynamic question generation
+import { useSessionRecording } from "../../hooks/useSessionRecording"; // SESSION: Import session recording hook for full interview recording
 
 // ============================================================
 // Props
@@ -102,6 +104,28 @@ const InterviewRoom: React.FC<InterviewRoomProps> = ({
     interviewId,
     onError: (err) => setError(err),
     onComplete: () => handleComplete(),
+  });
+
+  // ── Session Recording Hook ──────────────────────────────────
+  // SESSION: Records the entire interview session as a single video for self-review
+  const {
+    isRecording: isSessionRecording,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    recordedBlob: _sessionBlob,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    previewUrl: _sessionPreviewUrl,
+    recordingTime: sessionRecordingTime,
+    error: sessionRecordingError,
+    startRecording: startSessionRecording,
+    stopRecording: stopSessionRecording,
+  } = useSessionRecording({
+    maxDuration: 3600, // 1 hour max
+    onRecordingComplete: (blob) => {
+      // Store the session recording URL in sessionStorage for the review page
+      const url = URL.createObjectURL(blob);
+      sessionStorage.setItem(`session-recording-${interviewId}`, url);
+      console.log("[SessionRecording] Full interview session saved:", blob.size, "bytes");
+    },
   });
 
   // ── Local UI State ──────────────────────────────────────────
@@ -211,6 +235,11 @@ const InterviewRoom: React.FC<InterviewRoomProps> = ({
     setIsCompleting(true);
     setError(null);
 
+    // SESSION: Stop the session recording before completing
+    if (isSessionRecording) {
+      stopSessionRecording();
+    }
+
     try {
       await interviewService.completeInterview(interviewId);
       // ✅ Fixed: navigate to /complete which maps to InterviewComplete component
@@ -221,7 +250,7 @@ const InterviewRoom: React.FC<InterviewRoomProps> = ({
       );
       setIsCompleting(false);
     }
-  }, [interviewId, navigate]);
+  }, [interviewId, navigate, isSessionRecording, stopSessionRecording]);
 
   // ============================================================
   // End Interview Handler
@@ -231,6 +260,11 @@ const InterviewRoom: React.FC<InterviewRoomProps> = ({
     // Stop any ongoing TTS playback
     if (window.speechSynthesis) {
       window.speechSynthesis.cancel();
+    }
+
+    // SESSION: Stop the session recording before ending
+    if (isSessionRecording) {
+      stopSessionRecording();
     }
 
     setIsCompleting(true);
@@ -249,7 +283,7 @@ const InterviewRoom: React.FC<InterviewRoomProps> = ({
         setIsCompleting(false);
       }
     }
-  }, [interviewId, navigate, answeredQuestionIds.size]);
+  }, [interviewId, navigate, answeredQuestionIds.size, isSessionRecording, stopSessionRecording]);
 
   const handleOpenEndInterview = useCallback(() => {
     // Stop any ongoing TTS playback
@@ -498,16 +532,30 @@ const InterviewRoom: React.FC<InterviewRoomProps> = ({
               color="primary"
               variant="outlined"
             />
+            <Chip
+              icon={<FiberManualRecord />}
+              label="Session recorded"
+              color="error"
+              variant="outlined"
+            />
           </Box>
 
           <Button
             variant="contained"
             size="large"
-            onClick={() => setHasStarted(true)}
+            onClick={() => {
+              setHasStarted(true);
+              // SESSION: Start recording the full interview session
+              startSessionRecording();
+            }}
             sx={{ px: 6, py: 1.5, fontSize: "1rem", fontWeight: 600 }}
           >
             Begin Interview
           </Button>
+          
+          <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 2 }}>
+            Your entire session will be recorded for self-review.
+          </Typography>
         </Paper>
       </Container>
     );
@@ -538,9 +586,34 @@ const InterviewRoom: React.FC<InterviewRoomProps> = ({
             mb: 1,
           }}
         >
-          <Typography variant="body2" color="text.secondary" fontWeight={500}>
-            Question {currentQuestionIndex + 1} of {totalQuestions}
-          </Typography>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
+            <Typography variant="body2" color="text.secondary" fontWeight={500}>
+              Question {currentQuestionIndex + 1} of {totalQuestions}
+            </Typography>
+            {/* SESSION: Recording indicator */}
+            {isSessionRecording && (
+              <Chip
+                icon={
+                  <FiberManualRecord
+                    sx={{
+                      fontSize: 12,
+                      color: "error.main",
+                      animation: "pulse 1s infinite",
+                      "@keyframes pulse": {
+                        "0%, 100%": { opacity: 1 },
+                        "50%": { opacity: 0.3 },
+                      },
+                    }}
+                  />
+                }
+                label={`REC ${Math.floor(sessionRecordingTime / 60)}:${(sessionRecordingTime % 60).toString().padStart(2, "0")}`}
+                size="small"
+                variant="outlined"
+                color="error"
+                sx={{ fontFamily: "monospace", fontSize: "0.75rem" }}
+              />
+            )}
+          </Box>
           <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
             <Typography variant="body2" color="text.secondary">
               {answeredCount} answered
@@ -574,7 +647,7 @@ const InterviewRoom: React.FC<InterviewRoomProps> = ({
       </Box>
 
       {/* ── Error alert ── */}
-      {(error || hybridError) && (
+      {(error || hybridError || sessionRecordingError) && (
         <Alert
           severity="error"
           onClose={() => {
@@ -583,7 +656,7 @@ const InterviewRoom: React.FC<InterviewRoomProps> = ({
           }}
           sx={{ mb: 3, borderRadius: 2 }}
         >
-          {error || hybridError}
+          {error || hybridError || sessionRecordingError}
         </Alert>
       )}
 

@@ -169,8 +169,9 @@ export const useVideoRecording = (): UseVideoRecordingReturn => {
           setIsRecording(false);
         };
 
-        // Start recording with timeslice of 1000ms
-        recorder.start(1000);
+        // Start recording as a single continuous file (no timeslice chunking)
+        // This ensures the entire interview is recorded as one video file
+        recorder.start();
         mediaRecorderRef.current = recorder;
         setIsRecording(true);
       } catch (err: any) {

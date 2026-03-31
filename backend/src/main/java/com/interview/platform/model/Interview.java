@@ -59,6 +59,14 @@ public class Interview {
     @Column(name = "total_questions")
     private Integer totalQuestions;
 
+    /**
+     * Selected difficulty level for this interview.
+     * Values: EASY, MEDIUM, HARD, AUTO (or null for auto).
+     * Used to enforce consistent question difficulty throughout the interview.
+     */
+    @Column(name = "difficulty", length = 10)
+    private String difficulty;
+
     @OneToMany(mappedBy = "interview", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<Question> questions = new ArrayList<>();
 
@@ -242,5 +250,13 @@ public class Interview {
 
     public void setTotalQuestions(Integer totalQuestions) {
         this.totalQuestions = totalQuestions;
+    }
+
+    public String getDifficulty() {
+        return difficulty;
+    }
+
+    public void setDifficulty(String difficulty) {
+        this.difficulty = difficulty;
     }
 }

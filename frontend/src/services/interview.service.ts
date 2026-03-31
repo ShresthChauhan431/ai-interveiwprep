@@ -40,6 +40,7 @@ export const interviewService = {
     resumeId: number,
     jobRoleId: number,
     numQuestions?: number,
+    difficulty?: string,
   ): Promise<InterviewDTO> {
     try {
       const response = await longRunningApi.post<InterviewDTO>(
@@ -49,6 +50,7 @@ export const interviewService = {
           resumeId,
           jobRoleId,
           numQuestions,
+          difficulty,
         },
       );
       return response.data;
