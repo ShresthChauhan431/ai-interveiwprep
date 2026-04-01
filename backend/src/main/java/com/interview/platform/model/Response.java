@@ -40,6 +40,13 @@ public class Response {
     @Column(name = "video_duration")
     private Integer videoDuration;
 
+    @Lob
+    @Column(columnDefinition = "TEXT", name = "ai_feedback")
+    private String aiFeedback;
+
+    @Column(name = "score")
+    private Integer score; // Per-question score (0-100)
+
     @Column(name = "responded_at", nullable = false, updatable = false)
     private LocalDateTime respondedAt;
 
@@ -47,7 +54,7 @@ public class Response {
     }
 
     public Response(Long id, Question question, Interview interview, User user, String videoUrl, String transcription,
-            Double transcriptionConfidence, Integer videoDuration, LocalDateTime respondedAt) {
+            Double transcriptionConfidence, Integer videoDuration, String aiFeedback, LocalDateTime respondedAt) {
                 this.id = id;
                 this.question = question;
                 this.interview = interview;
@@ -56,6 +63,7 @@ public class Response {
                 this.transcription = transcription;
                 this.transcriptionConfidence = transcriptionConfidence;
                 this.videoDuration = videoDuration;
+                this.aiFeedback = aiFeedback;
                 this.respondedAt = respondedAt;
             }
 
@@ -135,5 +143,21 @@ public class Response {
 
     public void setRespondedAt(LocalDateTime respondedAt) {
         this.respondedAt = respondedAt;
+    }
+
+    public String getAiFeedback() {
+        return aiFeedback;
+    }
+
+    public void setAiFeedback(String aiFeedback) {
+        this.aiFeedback = aiFeedback;
+    }
+
+    public Integer getScore() {
+        return score;
+    }
+
+    public void setScore(Integer score) {
+        this.score = score != null ? Math.max(0, Math.min(100, score)) : null;
     }
 }

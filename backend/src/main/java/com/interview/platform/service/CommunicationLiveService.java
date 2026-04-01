@@ -161,6 +161,12 @@ public class CommunicationLiveService {
             requestBody.put("format", "json");
         }
 
+        // Latency optimization: limit response length and lower temperature
+        Map<String, Object> options = new LinkedHashMap<>();
+        options.put("num_predict", expectJson ? 200 : 100);  // shorter for conversation responses
+        options.put("temperature", 0.7);
+        requestBody.put("options", options);
+
         List<Map<String, String>> messages = new ArrayList<>();
 
         Map<String, String> systemMessage = new LinkedHashMap<>();

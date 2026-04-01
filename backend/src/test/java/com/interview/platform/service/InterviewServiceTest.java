@@ -117,7 +117,12 @@ class InterviewServiceTest {
                 lenient().when(interviewConfig.getPregenCount()).thenReturn(1);
                 lenient().when(interviewConfig.getGenerationTimeoutMs()).thenReturn(15000L);
                 lenient().when(interviewConfig.isHybridModeEnabled(anyInt())).thenReturn(true);
-                lenient().when(interviewConfig.isDynamicQuestion(anyInt())).thenReturn(false);
+                lenient().when(interviewConfig.isDynamicQuestion(anyInt(), anyInt())).thenReturn(false);
+                // FIX: Mock getTotalPregenCount for hybrid mode question generation
+                lenient().when(interviewConfig.getTotalPregenCount(anyInt())).thenReturn(1);
+                lenient().when(interviewConfig.getInitialPregenCount(anyInt())).thenReturn(1);
+                lenient().when(interviewConfig.getDynamicFollowupCount()).thenReturn(2);
+                lenient().when(interviewConfig.getDynamicTriggerQuestion(anyInt())).thenReturn(3);
         }
 
         // ============================================================

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.interview.platform.dto.FeedbackDTO;
+import com.interview.platform.dto.QuestionAnswerDTO;
 import com.interview.platform.model.Feedback;
 import com.interview.platform.model.Interview;
 import com.interview.platform.model.InterviewStatus;
@@ -157,6 +158,33 @@ public class AIFeedbackService {
 
                 // Step 6: Parse feedback
                 feedbackDTO = parseFeedbackResponse(aiResponse);
+
+                // Step 6.5: Update Response entities with question-specific AI feedback and score
+                if (feedbackDTO.getQuestionAnswers() != null) {
+                    for (int i = 0; i < responses.size(); i++) {
+                        Response r = responses.get(i);
+                        if (i < feedbackDTO.getQuestionAnswers().size()) {
+                            QuestionAnswerDTO qaDto = feedbackDTO.getQuestionAnswers().get(i);
+                            
+                            // Store the per-question score
+                            r.setScore(qaDto.getScore());
+                            
+                            // Build combined feedback string: score + feedback + ideal answer
+                            StringBuilder feedbackText = new StringBuilder();
+                            feedbackText.append("Score: ").append(qaDto.getScore()).append("/100\n\n");
+                            if (qaDto.getFeedback() != null && !qaDto.getFeedback().isBlank()) {
+                                feedbackText.append("Feedback: ").append(qaDto.getFeedback()).append("\n\n");
+                            }
+                            if (qaDto.getIdealAnswer() != null && !qaDto.getIdealAnswer().isBlank()) {
+                                feedbackText.append("Ideal Answer: ").append(qaDto.getIdealAnswer());
+                            }
+                            r.setAiFeedback(feedbackText.toString());
+                            
+                            responseRepository.save(r);
+                            log.debug("Saved per-question feedback for Q{}: score={}", i + 1, qaDto.getScore());
+                        }
+                    }
+                }
             } catch (Exception e) {
                 log.warn("FIX: Ollama feedback generation failed for interview ID: {}. "
                         + "Using fallback feedback. Error: {}", interviewId, e.getMessage(), e);
@@ -242,7 +270,7 @@ public class AIFeedbackService {
      * a usable feedback object with appropriate score based on transcription availability.
      *
      * @param responses the interview responses (for building a basic summary)
-     * @return a FeedbackDTO with default values
+     * @return a FeedbackDTO with default values and per-question scores
      */
     private FeedbackDTO buildFallbackFeedback(List<Response> responses) {
         log.info("FIX: Building fallback feedback for {} responses", responses.size());
@@ -258,21 +286,46 @@ public class AIFeedbackService {
             ));
             dto.setDetailedAnalysis("We could not generate detailed feedback because no responses were recorded for this interview session. "
                     + "Please make sure you record and submit your answers before finishing the interview.");
+            dto.setQuestionAnswers(Collections.emptyList());
             return dto;
         }
 
-        // Count responses with valid transcriptions (not empty, not placeholder messages)
-        long validTranscriptions = responses.stream()
-                .filter(r -> {
-                    String t = r.getTranscription();
-                    return t != null && !t.isBlank() 
-                        && !t.contains("[Transcription unavailable")
-                        && !t.equals("No response recorded");
-                })
-                .count();
+        // Build per-question feedback based on transcription availability
+        List<QuestionAnswerDTO> questionAnswers = new ArrayList<>();
+        int totalScore = 0;
+        int validTranscriptions = 0;
 
+        for (Response r : responses) {
+            QuestionAnswerDTO qaDto = new QuestionAnswerDTO();
+            String transcription = r.getTranscription();
+            boolean hasValidTranscription = transcription != null && !transcription.isBlank()
+                    && !transcription.contains("[Transcription unavailable")
+                    && !transcription.equals("No response recorded");
+
+            if (!hasValidTranscription) {
+                // No valid transcription - score of 0
+                qaDto.setScore(0);
+                qaDto.setFeedback("No answer was recorded or transcription was unavailable for this question.");
+                qaDto.setIdealAnswer("Please ensure your microphone is working and speak clearly when answering.");
+            } else {
+                // Has transcription but we couldn't analyze it with AI
+                // Give a neutral score since we can't evaluate content
+                int neutralScore = 50;
+                qaDto.setScore(neutralScore);
+                qaDto.setFeedback("Your response was captured but AI analysis was unavailable. Self-evaluate against the ideal answer.");
+                qaDto.setIdealAnswer("Review your response and compare it to expected competencies for this role.");
+                totalScore += neutralScore;
+                validTranscriptions++;
+            }
+
+            questionAnswers.add(qaDto);
+        }
+
+        dto.setQuestionAnswers(questionAnswers);
+
+        // Calculate overall score
         if (validTranscriptions == 0) {
-            // No real transcriptions available - score of 0 is more accurate than 50
+            // No real transcriptions available - score of 0 is accurate
             dto.setScore(0);
             dto.setStrengths(List.of("Completed the interview session", "Submitted video responses"));
             dto.setWeaknesses(List.of(
@@ -289,9 +342,9 @@ public class AIFeedbackService {
                     + "This may happen in local development mode where cloud transcription is unavailable. "
                     + "Please ensure your microphone is working and try again.");
         } else if (validTranscriptions < responses.size()) {
-            // Partial transcriptions - give proportional score
-            int proportionalScore = (int) ((validTranscriptions * 50) / responses.size());
-            dto.setScore(Math.max(25, proportionalScore)); // At least 25 if some responses were captured
+            // Partial transcriptions - proportional score
+            int calculatedScore = responses.size() > 0 ? totalScore / responses.size() : 0;
+            dto.setScore(calculatedScore);
             dto.setStrengths(List.of(
                     "Completed the interview",
                     validTranscriptions + " out of " + responses.size() + " responses were transcribed"
@@ -304,18 +357,19 @@ public class AIFeedbackService {
                     "Ensure consistent microphone quality throughout the interview",
                     "Speak clearly and at a moderate pace for better transcription accuracy"
             ));
-            dto.setDetailedAnalysis("Partial feedback available. " + validTranscriptions + " out of " + responses.size() 
+            dto.setDetailedAnalysis("Partial feedback available. " + validTranscriptions + " out of " + responses.size()
                     + " responses were successfully transcribed. Review your video recordings to self-assess the missing responses.");
         } else {
             // All transcriptions available but Ollama parsing failed
-            dto.setScore(50); // Neutral score when Ollama analysis fails
+            int calculatedScore = responses.size() > 0 ? totalScore / responses.size() : 50;
+            dto.setScore(calculatedScore);
             dto.setStrengths(List.of("Completed the interview", "All responses were transcribed"));
             dto.setWeaknesses(List.of("Automatic AI analysis was unavailable for detailed feedback"));
             dto.setRecommendations(List.of(
                     "Review your responses and self-evaluate against the job requirements",
                     "Practice answering similar questions with a peer for more detailed feedback"
             ));
-            dto.setDetailedAnalysis("Automatic AI analysis unavailable but all " + responses.size() 
+            dto.setDetailedAnalysis("Automatic AI analysis unavailable but all " + responses.size()
                     + " responses were captured. Please review your answers to self-assess your performance.");
         }
         return dto;
@@ -347,29 +401,63 @@ public class AIFeedbackService {
             questionNumber++;
         }
 
-        // FIX: Improved feedback prompt that instructs Ollama to return JSON only with
-        // clear format
+        // Build strict scoring prompt with per-question evaluation
         return String.format(
                 """
-                        You are an expert interview coach. Analyse these interview responses and
-                        provide detailed feedback.
+                        You are an EXTREMELY STRICT and ACCURATE interview evaluator. Your job is to provide
+                        honest, critical feedback. Do NOT inflate scores or give undeserved praise.
 
-                        Questions and Answers:
+                        === QUESTIONS AND ANSWERS ===
                         %s
 
-                        Return ONLY valid JSON in this exact format, no other text:
+                        === STRICT SCORING RUBRIC (apply this EXACTLY) ===
+                        
+                        PER-QUESTION SCORING (0-100):
+                        - 0: No answer provided, completely blank, or "No response recorded"
+                        - 1-20: Completely off-topic or irrelevant response
+                        - 21-40: Poor answer - very brief, missing most key points, shows misunderstanding
+                        - 41-55: Below average - addresses question but lacks substance or depth
+                        - 56-70: Average - covers basics but misses important details or examples
+                        - 71-85: Good - solid answer with relevant points and some examples
+                        - 86-95: Very good - comprehensive, well-structured, demonstrates clear understanding
+                        - 96-100: Exceptional - outstanding answer that would impress any interviewer
+
+                        CRITICAL RULES:
+                        1. If a response says "No response recorded" or is empty, score MUST be 0
+                        2. Very short answers (under 20 words) should rarely score above 50
+                        3. Answers without specific examples should rarely score above 70
+                        4. Be STRICT - most answers should fall in the 40-70 range
+                        5. The overall score should be the WEIGHTED AVERAGE of per-question scores
+
+                        Return ONLY valid JSON in this exact format:
                         {
-                          "score": 75,
+                          "score": 65,
                           "strengths": ["strength 1", "strength 2", "strength 3"],
-                          "weaknesses": ["improvement 1", "improvement 2"],
-                          "recommendations": ["resource 1", "resource 2"],
-                          "detailedAnalysis": "Overall performance summary here with specific observations about each answer"
+                          "weaknesses": ["area for improvement 1", "area for improvement 2"],
+                          "recommendations": ["specific action 1", "specific action 2"],
+                          "detailedAnalysis": "2-3 sentence overall assessment",
+                          "questionAnswers": [
+                            {
+                              "score": 0,
+                              "feedback": "No answer was provided for this question.",
+                              "idealAnswer": "A good answer would include..."
+                            },
+                            {
+                              "score": 55,
+                              "feedback": "The answer was brief and lacked specific examples.",
+                              "idealAnswer": "A comprehensive answer would explain..."
+                            }
+                          ]
                         }
 
-                        The score must be 0-100. Include at least 2 items in each list.
-                        Be specific and actionable in your feedback.
+                        IMPORTANT:
+                        - questionAnswers array MUST have EXACTLY %d objects (one per question, in order)
+                        - Each questionAnswers object MUST have: score (0-100), feedback (brief critique), idealAnswer
+                        - Overall score is the average of all per-question scores
+                        - Be honest and strict. Users need accurate feedback to improve.
                         """,
-                qaPairs.toString());
+                qaPairs.toString(),
+                responses.size());
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -512,7 +600,89 @@ public class AIFeedbackService {
 
             jsonContent = jsonContent.trim();
 
-            FeedbackDTO dto = objectMapper.readValue(jsonContent, FeedbackDTO.class);
+            // Parse the JSON manually to handle per-question scores
+            JsonNode root = objectMapper.readTree(jsonContent);
+            FeedbackDTO dto = new FeedbackDTO();
+
+            // Extract top-level fields
+            if (root.has("score")) {
+                dto.setScore(root.get("score").asInt(0));
+            }
+            if (root.has("strengths") && root.get("strengths").isArray()) {
+                List<String> strengths = new ArrayList<>();
+                for (JsonNode s : root.get("strengths")) {
+                    strengths.add(s.asText());
+                }
+                dto.setStrengths(strengths);
+            }
+            if (root.has("weaknesses") && root.get("weaknesses").isArray()) {
+                List<String> weaknesses = new ArrayList<>();
+                for (JsonNode w : root.get("weaknesses")) {
+                    weaknesses.add(w.asText());
+                }
+                dto.setWeaknesses(weaknesses);
+            }
+            if (root.has("recommendations") && root.get("recommendations").isArray()) {
+                List<String> recs = new ArrayList<>();
+                for (JsonNode r : root.get("recommendations")) {
+                    recs.add(r.asText());
+                }
+                dto.setRecommendations(recs);
+            }
+            if (root.has("detailedAnalysis")) {
+                dto.setDetailedAnalysis(root.get("detailedAnalysis").asText());
+            }
+
+            // Parse per-question answers with scores
+            if (root.has("questionAnswers") && root.get("questionAnswers").isArray()) {
+                List<QuestionAnswerDTO> qaList = new ArrayList<>();
+                int totalScore = 0;
+                int questionCount = 0;
+
+                for (JsonNode qa : root.get("questionAnswers")) {
+                    QuestionAnswerDTO qaDto = new QuestionAnswerDTO();
+                    
+                    // Extract per-question score
+                    int questionScore = 0;
+                    if (qa.has("score")) {
+                        questionScore = qa.get("score").asInt(0);
+                        // Clamp to 0-100
+                        questionScore = Math.max(0, Math.min(100, questionScore));
+                    }
+                    qaDto.setScore(questionScore);
+                    totalScore += questionScore;
+                    questionCount++;
+
+                    // Extract feedback
+                    if (qa.has("feedback")) {
+                        qaDto.setFeedback(qa.get("feedback").asText());
+                    } else {
+                        qaDto.setFeedback("");
+                    }
+
+                    // Extract ideal answer
+                    if (qa.has("idealAnswer")) {
+                        qaDto.setIdealAnswer(qa.get("idealAnswer").asText());
+                    } else {
+                        qaDto.setIdealAnswer("");
+                    }
+
+                    qaList.add(qaDto);
+                }
+
+                dto.setQuestionAnswers(qaList);
+
+                // Calculate overall score as weighted average of per-question scores
+                if (questionCount > 0) {
+                    int calculatedScore = totalScore / questionCount;
+                    // If AI provided a different overall score, use the calculated one for consistency
+                    if (dto.getScore() == 0 || Math.abs(dto.getScore() - calculatedScore) > 15) {
+                        log.info("Recalculating overall score: AI said {}, calculated average is {}",
+                                dto.getScore(), calculatedScore);
+                        dto.setScore(calculatedScore);
+                    }
+                }
+            }
 
             // FIX: Validate and clamp score range to 0-100
             if (dto.getScore() < 0) {
@@ -534,6 +704,9 @@ public class AIFeedbackService {
             if (dto.getDetailedAnalysis() == null) {
                 dto.setDetailedAnalysis("");
             }
+
+            log.info("Parsed feedback with overall score {} from {} question scores",
+                    dto.getScore(), dto.getQuestionAnswers() != null ? dto.getQuestionAnswers().size() : 0);
 
             return dto;
         } catch (JsonProcessingException e) {

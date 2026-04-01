@@ -536,7 +536,7 @@ public class InterviewController {
                 questionAnswers.add(new QuestionAnswerDTO(
                     question.getQuestionText(),
                     userAnswer,
-                    null
+                    response.getAiFeedback()
                 ));
             }
             feedbackResponse.put("questionAnswers", questionAnswers);

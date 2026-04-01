@@ -204,6 +204,12 @@ public class OllamaService {
         requestBody.put("format", "json");
         requestBody.put("stream", false);
 
+        // Latency optimization: limit response length and lower temperature for faster generation
+        Map<String, Object> options = new LinkedHashMap<>();
+        options.put("num_predict", 200);   // Limit to ~200 tokens (enough for a single question JSON)
+        options.put("temperature", 0.7);   // Lower temperature for faster sampling
+        requestBody.put("options", options);
+
         List<Map<String, String>> messages = new ArrayList<>();
         Map<String, String> userMessage = new LinkedHashMap<>();
         userMessage.put("role", "user");
@@ -242,14 +248,19 @@ public class OllamaService {
         if (interview.getResume() != null && interview.getResume().getExtractedText() != null) {
             String rawText = interview.getResume().getExtractedText();
             resumeSummary = sanitizeResumeText(rawText);
-            // Truncate for adaptive prompts — we have conversation history taking space
-            if (resumeSummary.length() > 2000) {
-                resumeSummary = resumeSummary.substring(0, 2000) + "...";
+            // Truncate for adaptive prompts — shorter for faster inference
+            if (resumeSummary.length() > 1000) {
+                resumeSummary = resumeSummary.substring(0, 1000) + "...";
             }
         }
 
+        // Limit Q&A history to the last 3 pairs for faster inference
+        List<QuestionAnswerPair> recentPairs = previousQAPairs.size() > 3
+                ? previousQAPairs.subList(previousQAPairs.size() - 3, previousQAPairs.size())
+                : previousQAPairs;
+
         // Build conversation history string
-        String conversationHistory = previousQAPairs.stream()
+        String conversationHistory = recentPairs.stream()
                 .map(qa -> String.format("Q%d: %s\nA%d: %s",
                         qa.getQuestionNumber(), qa.getQuestion(),
                         qa.getQuestionNumber(), qa.getAnswer() != null ? qa.getAnswer() : "(no answer)"))
@@ -837,6 +848,312 @@ public class OllamaService {
         }
 
         return questions;
+    }
+
+    /**
+     * Generate dynamic follow-up questions based on the user's answer to a trigger question.
+     *
+     * <p>This method is called after the user answers the trigger question (Q3 by default)
+     * in hybrid mode. It generates a batch of follow-up questions that probe deeper into
+     * topics revealed by the user's answer.</p>
+     *
+     * @param interview          the current interview (contains jobRole and resume)
+     * @param triggerQuestion    the question that was just answered (e.g., Q3)
+     * @param triggerAnswer      the user's transcribed answer to the trigger question
+     * @param previousQAPairs    all previous Q&A pairs for context
+     * @param startQuestionNumber the first question number for the follow-ups (e.g., 4)
+     * @param count              number of follow-up questions to generate (e.g., 2)
+     * @param totalQuestions     total questions in the interview
+     * @return list of generated Question entities (not yet persisted)
+     */
+    public List<Question> generateDynamicFollowups(
+            Interview interview,
+            Question triggerQuestion,
+            String triggerAnswer,
+            List<QuestionAnswerPair> previousQAPairs,
+            int startQuestionNumber,
+            int count,
+            int totalQuestions) {
+
+        log.info("Generating {} dynamic follow-up questions starting at Q{} for interview {}",
+                count, startQuestionNumber, interview.getId());
+
+        try {
+            return Decorators.ofSupplier(() -> doGenerateDynamicFollowups(
+                            interview, triggerQuestion, triggerAnswer, previousQAPairs,
+                            startQuestionNumber, count, totalQuestions))
+                    .withRetry(ollamaRetry)
+                    .withCircuitBreaker(ollamaCircuitBreaker)
+                    .decorate()
+                    .get();
+        } catch (Exception e) {
+            log.error("Dynamic follow-up generation failed, using generic fallbacks: {}", e.getMessage());
+            List<Question> fallbacks = new ArrayList<>();
+            for (int i = 0; i < count; i++) {
+                fallbacks.add(generateGenericFallbackQuestion(
+                        interview.getJobRole() != null ? interview.getJobRole().getTitle() : "General",
+                        startQuestionNumber + i,
+                        totalQuestions));
+            }
+            return fallbacks;
+        }
+    }
+
+    /**
+     * Internal method that performs the actual dynamic follow-up generation.
+     */
+    private List<Question> doGenerateDynamicFollowups(
+            Interview interview,
+            Question triggerQuestion,
+            String triggerAnswer,
+            List<QuestionAnswerPair> previousQAPairs,
+            int startQuestionNumber,
+            int count,
+            int totalQuestions) {
+
+        String prompt = buildDynamicFollowupsPrompt(
+                interview, triggerQuestion, triggerAnswer, previousQAPairs,
+                startQuestionNumber, count, totalQuestions);
+
+        Map<String, Object> requestBody = new LinkedHashMap<>();
+        requestBody.put("model", model);
+        requestBody.put("format", "json");
+        requestBody.put("stream", false);
+
+        // Limit response length for faster generation
+        Map<String, Object> options = new LinkedHashMap<>();
+        options.put("num_predict", 400); // ~400 tokens for 2 questions
+        options.put("temperature", 0.7);
+        requestBody.put("options", options);
+
+        List<Map<String, String>> messages = new ArrayList<>();
+        Map<String, String> userMessage = new LinkedHashMap<>();
+        userMessage.put("role", "user");
+        userMessage.put("content", prompt);
+        messages.add(userMessage);
+
+        requestBody.put("messages", messages);
+
+        log.debug("Calling Ollama API for dynamic follow-up generation ({} questions)", count);
+
+        ResponseEntity<String> response = restTemplate.postForEntity(apiUrl, requestBody, String.class);
+
+        if (response.getBody() == null) {
+            throw new RuntimeException("Empty response from Ollama API for dynamic follow-ups");
+        }
+
+        String content = extractContentFromResponse(response.getBody());
+        return parseDynamicFollowupsResponse(content, startQuestionNumber, count, 
+                interview.getJobRole() != null ? interview.getJobRole().getTitle() : "General",
+                totalQuestions);
+    }
+
+    /**
+     * Build the prompt for generating dynamic follow-up questions.
+     */
+    private String buildDynamicFollowupsPrompt(
+            Interview interview,
+            Question triggerQuestion,
+            String triggerAnswer,
+            List<QuestionAnswerPair> previousQAPairs,
+            int startQuestionNumber,
+            int count,
+            int totalQuestions) {
+
+        String jobTitle = interview.getJobRole() != null ? interview.getJobRole().getTitle() : "General";
+        String jobDescription = interview.getJobRole() != null && interview.getJobRole().getDescription() != null
+                ? interview.getJobRole().getDescription() : "";
+
+        String resumeSummary = "";
+        if (interview.getResume() != null && interview.getResume().getExtractedText() != null) {
+            String rawText = interview.getResume().getExtractedText();
+            resumeSummary = sanitizeResumeText(rawText);
+            if (resumeSummary.length() > 800) {
+                resumeSummary = resumeSummary.substring(0, 800) + "...";
+            }
+        }
+
+        // Build conversation history
+        String conversationHistory = previousQAPairs.stream()
+                .map(qa -> String.format("Q%d: %s\nA%d: %s",
+                        qa.getQuestionNumber(), qa.getQuestion(),
+                        qa.getQuestionNumber(), qa.getAnswer() != null ? qa.getAnswer() : "(no answer)"))
+                .collect(Collectors.joining("\n\n"));
+
+        // Get difficulty setting
+        String difficultyLevel = interview.getDifficulty();
+        String enforcedDifficulty = (difficultyLevel == null || difficultyLevel.isBlank() 
+                || difficultyLevel.equalsIgnoreCase("AUTO")) ? "MEDIUM" : difficultyLevel.toUpperCase();
+
+        // Sanitize trigger answer
+        String safeTriggerAnswer = triggerAnswer != null ? sanitizeResumeText(triggerAnswer) : "(no answer provided)";
+        if (safeTriggerAnswer.length() > 1500) {
+            safeTriggerAnswer = safeTriggerAnswer.substring(0, 1500) + "...";
+        }
+
+        return String.format(
+                """
+                You are a skilled technical interviewer conducting an interview for a %s position.
+                
+                JOB DESCRIPTION:
+                %s
+                
+                CANDIDATE RESUME (summary):
+                %s
+                
+                INTERVIEW SO FAR:
+                %s
+                
+                === TRIGGER QUESTION AND ANSWER ===
+                The candidate just answered the following question. Analyze their response carefully.
+                
+                Q%d: %s
+                
+                CANDIDATE'S ANSWER:
+                %s
+                
+                === YOUR TASK ===
+                Generate EXACTLY %d follow-up questions that probe DEEPER into topics revealed by the candidate's answer.
+                
+                FOLLOW-UP GUIDELINES:
+                - If the candidate mentioned a technology/skill, ask them to elaborate or give specifics
+                - If they showed weakness or uncertainty, gently explore that area further
+                - If they showed strength, challenge them with a harder question on that topic
+                - Make questions natural and conversational, building on what they said
+                - Keep questions answerable in 1-2 minutes
+                - All questions must be %s difficulty level
+                
+                Return ONLY a valid JSON array in this exact format:
+                [
+                  {
+                    "questionText": "Your first follow-up question based on their answer",
+                    "category": "TECHNICAL",
+                    "difficulty": "%s",
+                    "rationale": "Why this follows from their answer"
+                  },
+                  {
+                    "questionText": "Your second follow-up question",
+                    "category": "BEHAVIORAL",
+                    "difficulty": "%s",
+                    "rationale": "Why this follows from their answer"
+                  }
+                ]
+                
+                Categories: TECHNICAL, BEHAVIORAL, GENERAL
+                Generate exactly %d questions. Difficulty MUST be: %s
+                """,
+                jobTitle,
+                jobDescription.isEmpty() ? "(No detailed description)" : jobDescription,
+                resumeSummary.isEmpty() ? "(No resume)" : resumeSummary,
+                conversationHistory.isEmpty() ? "(First questions)" : conversationHistory,
+                triggerQuestion.getQuestionNumber(),
+                triggerQuestion.getQuestionText(),
+                safeTriggerAnswer,
+                count,
+                enforcedDifficulty,
+                enforcedDifficulty,
+                enforcedDifficulty,
+                count,
+                enforcedDifficulty
+        );
+    }
+
+    /**
+     * Parse the response from Ollama for dynamic follow-up questions.
+     */
+    private List<Question> parseDynamicFollowupsResponse(
+            String content, int startQuestionNumber, int expectedCount,
+            String jobRole, int totalQuestions) {
+
+        List<Question> questions = new ArrayList<>();
+
+        try {
+            String jsonContent = content.trim();
+            
+            int startIndex = jsonContent.indexOf('[');
+            int endIndex = jsonContent.lastIndexOf(']');
+            if (startIndex >= 0 && startIndex < endIndex) {
+                jsonContent = jsonContent.substring(startIndex, endIndex + 1);
+            } else {
+                // Try to find a JSON object and wrap it
+                startIndex = jsonContent.indexOf('{');
+                endIndex = jsonContent.lastIndexOf('}');
+                if (startIndex >= 0 && startIndex < endIndex) {
+                    jsonContent = "[" + jsonContent.substring(startIndex, endIndex + 1) + "]";
+                } else {
+                    log.warn("No JSON found in dynamic follow-ups response, using fallbacks");
+                    return generateFallbackFollowups(jobRole, startQuestionNumber, expectedCount, totalQuestions);
+                }
+            }
+
+            JsonNode node = objectMapper.readTree(jsonContent);
+
+            if (node.isArray()) {
+                int questionNumber = startQuestionNumber;
+                for (JsonNode qNode : node) {
+                    if (questions.size() >= expectedCount) break;
+
+                    String questionText = null;
+                    String category = "TECHNICAL";
+                    String difficulty = "MEDIUM";
+
+                    if (qNode.has("questionText")) {
+                        questionText = qNode.get("questionText").asText();
+                    } else if (qNode.has("question")) {
+                        questionText = qNode.get("question").asText();
+                    } else if (qNode.has("text")) {
+                        questionText = qNode.get("text").asText();
+                    }
+
+                    if (qNode.has("category")) {
+                        category = qNode.get("category").asText();
+                    }
+                    if (qNode.has("difficulty")) {
+                        difficulty = qNode.get("difficulty").asText();
+                    }
+
+                    if (questionText != null && !questionText.isBlank()) {
+                        Question q = new Question();
+                        q.setQuestionText(questionText);
+                        q.setQuestionNumber(questionNumber++);
+                        q.setCategory(category);
+                        q.setDifficulty(difficulty);
+                        questions.add(q);
+
+                        log.info("Parsed dynamic follow-up Q{}: {} [{}:{}]",
+                                q.getQuestionNumber(),
+                                questionText.length() > 50 ? questionText.substring(0, 50) + "..." : questionText,
+                                category, difficulty);
+                    }
+                }
+            }
+
+            // Fill remaining with fallbacks if needed
+            while (questions.size() < expectedCount) {
+                Question fallback = generateGenericFallbackQuestion(
+                        jobRole, startQuestionNumber + questions.size(), totalQuestions);
+                questions.add(fallback);
+            }
+
+            return questions;
+
+        } catch (Exception e) {
+            log.error("Failed to parse dynamic follow-ups response: {}", e.getMessage());
+            return generateFallbackFollowups(jobRole, startQuestionNumber, expectedCount, totalQuestions);
+        }
+    }
+
+    /**
+     * Generate fallback follow-up questions when Ollama fails.
+     */
+    private List<Question> generateFallbackFollowups(
+            String jobRole, int startQuestionNumber, int count, int totalQuestions) {
+        
+        List<Question> fallbacks = new ArrayList<>();
+        for (int i = 0; i < count; i++) {
+            fallbacks.add(generateGenericFallbackQuestion(jobRole, startQuestionNumber + i, totalQuestions));
+        }
+        return fallbacks;
     }
 
     /**

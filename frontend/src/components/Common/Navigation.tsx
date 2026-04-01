@@ -63,6 +63,11 @@ const Navigation: React.FC = () => {
     const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
     const menuOpen = Boolean(anchorEl);
 
+    // Hide global navigation on communication-live page (it has its own header)
+    if (location.pathname === '/communication-live') {
+        return null;
+    }
+
     const handleMenuOpen = (e: React.MouseEvent<HTMLElement>) => setAnchorEl(e.currentTarget);
     const handleMenuClose = () => setAnchorEl(null);
     const toggleDrawer = () => setMobileOpen(!mobileOpen);

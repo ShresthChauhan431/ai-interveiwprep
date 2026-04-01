@@ -19,6 +19,7 @@ import {
   DialogContent,
   DialogActions,
   IconButton,
+  Chip,
 } from "@mui/material";
 import {
   Mic,
@@ -29,12 +30,19 @@ import {
   Warning,
   Lightbulb,
   RecordVoiceOver,
+  Videocam,
+  ExitToApp,
+  Download,
+  Delete,
+  FiberManualRecord,
 } from "@mui/icons-material";
 import {
   useCommunicationStore,
   Feedback,
 } from "../../store/communicationStore";
 import { communicationService } from "../../services/communication.service";
+import { useSessionRecording } from "../../hooks/useSessionRecording";
+import { useNavigate } from "react-router-dom";
 
 // Web Speech API types are declared in src/types/speech-recognition.d.ts
 
@@ -64,6 +72,17 @@ const CommunicationLive: React.FC = () => {
     Record<number, Feedback>
   >({});
   const [showOverallDialog, setShowOverallDialog] = useState(false);
+  const [showStopDialog, setShowStopDialog] = useState(false);
+
+  const navigate = useNavigate();
+
+  // Session Recording
+  const {
+    isRecording: isSessionRecording,
+    previewUrl: sessionPreviewUrl,
+    startRecording: startSessionRecording,
+    stopRecording: stopSessionRecording,
+  } = useSessionRecording();
 
   const recognitionRef = useRef<any>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -129,6 +148,13 @@ const CommunicationLive: React.FC = () => {
       setIsAILoading(true);
       try {
         const msg = await communicationService.startConversation();
+        
+        // TTS
+        if ('speechSynthesis' in window) {
+          const utterance = new SpeechSynthesisUtterance(msg);
+          window.speechSynthesis.speak(utterance);
+        }
+        
         addMessage("ai", msg);
       } catch (err) {
         setError("Failed to start conversation.");
@@ -146,6 +172,11 @@ const CommunicationLive: React.FC = () => {
   }, [messages, interimTranscript, transcript]);
 
   const handleStartSpeaking = () => {
+    // Stop any ongoing AI speech
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    
     if (analyzeTimeoutRef.current) {
       clearTimeout(analyzeTimeoutRef.current);
       analyzeTimeoutRef.current = null;
@@ -212,6 +243,12 @@ const CommunicationLive: React.FC = () => {
         [currentUserMessageIndex]: feedback,
       }));
 
+      // TTS
+      if ('speechSynthesis' in window) {
+        const utterance = new SpeechSynthesisUtterance(nextMsg);
+        window.speechSynthesis.speak(utterance);
+      }
+
       // Add AI response
       addMessage("ai", nextMsg);
     } catch (err) {
@@ -224,6 +261,15 @@ const CommunicationLive: React.FC = () => {
   };
 
   const handleEndConversation = async () => {
+    if (isSessionRecording) {
+      stopSessionRecording();
+    }
+    
+    // Stop any ongoing AI speech
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    
     setIsOverallAnalyzing(true);
     try {
       const historyPayload = messages.map((m) => ({
@@ -364,22 +410,56 @@ const CommunicationLive: React.FC = () => {
               </Typography>
             </Box>
           </Box>
-          <Button
-            variant="contained"
-            color="error"
-            onClick={handleEndConversation}
-            disabled={isOverallAnalyzing || messages.length < 2}
-            startIcon={
-              isOverallAnalyzing ? (
-                <CircularProgress size={16} color="inherit" />
-              ) : (
-                <Assessment />
-              )
-            }
-            sx={{ borderRadius: 8, textTransform: "none" }}
-          >
-            End & Get Feedback
-          </Button>
+          <Box sx={{ display: "flex", gap: 2, alignItems: "center" }}>
+            {/* Recording Indicator */}
+            {isSessionRecording && (
+              <Chip
+                icon={<FiberManualRecord sx={{ fontSize: 12, color: "error.main", animation: "pulse 1s infinite" }} />}
+                label="REC"
+                size="small"
+                sx={{
+                  bgcolor: "rgba(255,0,0,0.1)",
+                  color: "error.main",
+                  fontWeight: 600,
+                  "& .MuiChip-icon": { color: "error.main" },
+                }}
+              />
+            )}
+            <Button
+              variant="outlined"
+              color="inherit"
+              onClick={isSessionRecording ? stopSessionRecording : startSessionRecording}
+              startIcon={isSessionRecording ? <StopCircle /> : <Videocam />}
+              sx={{ borderRadius: 8, textTransform: "none", borderColor: isSessionRecording ? "error.main" : "inherit", color: isSessionRecording ? "error.main" : "inherit" }}
+            >
+              {isSessionRecording ? "Rec: Stop" : "Rec: Start"}
+            </Button>
+            <Button
+              variant="outlined"
+              color="inherit"
+              onClick={() => setShowStopDialog(true)}
+              startIcon={<ExitToApp />}
+              sx={{ borderRadius: 8, textTransform: "none" }}
+            >
+              Stop Practice
+            </Button>
+            <Button
+              variant="contained"
+              color="error"
+              onClick={handleEndConversation}
+              disabled={isOverallAnalyzing || messages.length < 2}
+              startIcon={
+                isOverallAnalyzing ? (
+                  <CircularProgress size={16} color="inherit" />
+                ) : (
+                  <Assessment />
+                )
+              }
+              sx={{ borderRadius: 8, textTransform: "none" }}
+            >
+              End & Get Feedback
+            </Button>
+          </Box>
         </Toolbar>
       </AppBar>
 
@@ -657,7 +737,41 @@ const CommunicationLive: React.FC = () => {
             </Box>
           )}
         </DialogContent>
-        <DialogActions sx={{ p: 2, pt: 0 }}>
+        <DialogActions sx={{ p: 2, pt: 0, justifyContent: 'space-between' }}>
+          <Box sx={{ display: "flex", gap: 1 }}>
+              {sessionPreviewUrl && (
+                  <>
+                      <Button
+                          variant="outlined"
+                          color="primary"
+                          startIcon={<Download />}
+                          onClick={() => {
+                              const a = document.createElement("a");
+                              a.href = sessionPreviewUrl;
+                              a.download = "practice-session.webm";
+                              a.click();
+                          }}
+                      >
+                          Download Recording
+                      </Button>
+                      <Button
+                          variant="outlined"
+                          color="error"
+                          startIcon={<Delete />}
+                          onClick={() => {
+                              // Revoke the URL to free memory
+                              URL.revokeObjectURL(sessionPreviewUrl);
+                              // Close dialog and reset
+                              setShowOverallDialog(false);
+                              reset();
+                              navigate("/dashboard");
+                          }}
+                      >
+                          Delete Recording
+                      </Button>
+                  </>
+              )}
+          </Box>
           <Button
             variant="contained"
             onClick={() => {
@@ -667,6 +781,65 @@ const CommunicationLive: React.FC = () => {
             }}
           >
             Start New Practice
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* STOP PRACTICE CONFIRMATION DIALOG */}
+      <Dialog
+        open={showStopDialog}
+        onClose={() => setShowStopDialog(false)}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 3 } }}
+      >
+        <DialogTitle sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+          <ExitToApp color="warning" />
+          Stop Practice?
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body1" color="text.secondary">
+            Are you sure you want to stop this practice session? You will not receive feedback on your conversation.
+          </Typography>
+          {isSessionRecording && (
+            <Typography variant="body2" color="warning.main" sx={{ mt: 2 }}>
+              Note: Your recording will be discarded.
+            </Typography>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button
+            variant="outlined"
+            onClick={() => setShowStopDialog(false)}
+          >
+            Continue Practice
+          </Button>
+          <Button
+            variant="contained"
+            color="error"
+            startIcon={<ExitToApp />}
+            onClick={() => {
+              // Stop any ongoing processes
+              if (isSessionRecording) {
+                stopSessionRecording();
+              }
+              if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel();
+              }
+              if (recognitionRef.current) {
+                try {
+                  recognitionRef.current.stop();
+                } catch (e) {
+                  // Ignore errors
+                }
+              }
+              // Reset state and navigate
+              reset();
+              setShowStopDialog(false);
+              navigate("/dashboard");
+            }}
+          >
+            Stop & Exit
           </Button>
         </DialogActions>
       </Dialog>

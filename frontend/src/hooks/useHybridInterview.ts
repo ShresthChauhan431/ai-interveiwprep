@@ -111,7 +111,8 @@ export const useHybridInterview = ({
 
   // ── Prefetch Cache ──────────────────────────────────────────
   // Cache for prefetched next question (keyed by current question ID)
-  const prefetchCacheRef = useRef<Map<number, NextQuestionResponse>>(new Map());
+  // Store the Promise so advanceToNext can await it if it's still in progress!
+  const prefetchCacheRef = useRef<Map<number, Promise<NextQuestionResponse>>>(new Map());
   const prefetchInProgressRef = useRef<Set<number>>(new Set());
 
   // ── Derived State ───────────────────────────────────────────
@@ -178,17 +179,18 @@ export const useHybridInterview = ({
       console.log(`[Prefetch] Starting prefetch for question after ${questionId}`);
       
       // Call the backend to pre-generate the next question
-      // We pass empty transcript since we don't have the answer yet
-      // The backend will use previous Q&A pairs for context
-      const response = await interviewService.submitAnswerAndGetNext(
+      // Stores the Promise so we can await it if advanceToNext is called before it finishes.
+      const prefetchPromise = interviewService.submitAnswerAndGetNext(
         interviewId,
         questionId,
         "", // Empty transcript - backend will handle gracefully
         undefined, // No video URL yet
       );
       
-      // Cache the prefetched response
-      prefetchCacheRef.current.set(questionId, response);
+      // Cache the promise immediately
+      prefetchCacheRef.current.set(questionId, prefetchPromise);
+      
+      await prefetchPromise;
       console.log(`[Prefetch] Cached prefetched question for ${questionId}`);
       
     } catch (err) {
@@ -329,28 +331,40 @@ export const useHybridInterview = ({
         }
         setIsTranscribing(false);
 
-        // Step 2: Check if we have a prefetched response for this question
+        // Step 2: Check if we have an in-progress or completed prefetch
         let response: NextQuestionResponse;
-        const prefetchedResponse = prefetchCacheRef.current.get(currentQuestion.questionId);
+        const prefetchPromise = prefetchCacheRef.current.get(currentQuestion.questionId);
         
-        if (prefetchedResponse) {
-          // Use prefetched response - much faster!
-          console.log(`[Prefetch] Using cached response for question ${currentQuestion.questionId}`);
-          response = prefetchedResponse;
-          prefetchCacheRef.current.delete(currentQuestion.questionId);
+        if (prefetchPromise) {
+          // Await the prefetched promise - if it's already done this resolves immediately!
+          console.log(`[Prefetch] Awaiting prefetched response for question ${currentQuestion.questionId}`);
           
-          // Still need to submit the actual answer with transcript
-          // Fire and forget - don't wait for this since we have the next question
-          interviewService.submitAnswerAndGetNext(
-            interviewId,
-            currentQuestion.questionId,
-            finalTranscript,
-            videoUrl,
-          ).catch((err) => {
-            console.warn("[Prefetch] Background answer submission failed:", err);
-          });
+          try {
+            response = await prefetchPromise;
+            prefetchCacheRef.current.delete(currentQuestion.questionId);
+            
+            // Still need to submit the actual answer with transcript
+            // Fire and forget - don't wait for this since we have the next question
+            interviewService.submitAnswerAndGetNext(
+              interviewId,
+              currentQuestion.questionId,
+              finalTranscript,
+              videoUrl,
+            ).catch((err) => {
+              console.warn("[Prefetch] Background answer submission failed:", err);
+            });
+          } catch (e) {
+            console.warn("[Prefetch] Prefetch failed, falling back to synchronous generation", e);
+            response = await interviewService.submitAnswerAndGetNext(
+              interviewId,
+              currentQuestion.questionId,
+              finalTranscript,
+              videoUrl,
+            );
+          }
         } else {
           // No prefetch available - generate next question synchronously
+          console.log(`[Prefetch] No prefetch found, synchronous generation required`);
           response = await interviewService.submitAnswerAndGetNext(
             interviewId,
             currentQuestion.questionId,
@@ -403,9 +417,15 @@ export const useHybridInterview = ({
             (q) => q.questionId === response.nextQuestionId,
           );
 
+          let nextIndex;
+
           if (existingNextIndex === -1) {
-            // Dynamic question — add to array
+            // Dynamic question — add to array and sort to maintain order
             updatedQuestions.push(nextQuestion);
+            updatedQuestions.sort((a, b) => a.questionNumber - b.questionNumber);
+            nextIndex = updatedQuestions.findIndex(
+              (q) => q.questionId === response.nextQuestionId
+            );
           } else {
             // Pre-generated question — update with any new data (e.g., audio URL)
             updatedQuestions[existingNextIndex] = {
@@ -414,6 +434,7 @@ export const useHybridInterview = ({
                 response.nextQuestionAudioUrl ||
                 updatedQuestions[existingNextIndex].audioUrl,
             };
+            nextIndex = existingNextIndex;
           }
 
           // Update interview in store
@@ -425,10 +446,6 @@ export const useHybridInterview = ({
           }
 
           // Advance to next question index
-          const nextIndex =
-            existingNextIndex !== -1
-              ? existingNextIndex
-              : updatedQuestions.length - 1;
           setCurrentQuestionIndex(nextIndex);
           setRecordingState(false);
         }

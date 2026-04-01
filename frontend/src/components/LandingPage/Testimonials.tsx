@@ -5,23 +5,23 @@ import FormatQuoteIcon from '@mui/icons-material/FormatQuote';
 
 const testimonials = [
   {
-    name: "Sarah Jenkins",
-    role: "Software Engineer @ TechCorp",
-    avatar: "https://i.pravatar.cc/150?u=a042581f4e29026024d",
+    name: "Shresth Chauhan",
+    role: "Software Engineer @SVG",
+    avatar: "https://www.behance.net/gallery/121802423/Letter-S-Monogram-Logo",
     rating: 5,
     quote: "This platform completely changed my interview game. I went from being nervous and rambling to concise and confident. Landed the job!",
   },
   {
-    name: "Michael Chen",
+    name: "Dhwanit Vyas",
     role: "Product Manager @ StartUp",
-    avatar: "https://i.pravatar.cc/150?u=a042581f4e29026704d",
+    avatar: "https://www.behance.net/gallery/121802423/Letter-S-Monogram-Logo",
     rating: 5,
     quote: "The AI feedback is incredible accurately. It caught behavioral cues I didn't even know I had. Highly recommended for any serious job seeker.",
   },
   {
-    name: "Emily Rodriguez",
+    name: "Mehak Bansal",
     role: "UX Designer @ CreativeAgency",
-    avatar: "https://i.pravatar.cc/150?u=a042581f4e29026024e",
+    avatar: "https://www.behance.net/gallery/121802423/Letter-S-Monogram-Logo",
     rating: 4.5,
     quote: "I love the role-specific questions. It felt like a real interview simulation. The video recording playback was an eye-opener.",
   },

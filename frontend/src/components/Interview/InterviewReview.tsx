@@ -36,6 +36,7 @@ import {
 } from '@mui/icons-material';
 import { InterviewDTO, InterviewQuestion, Feedback, asFeedbackList } from '../../types';
 import { interviewService } from '../../services/interview.service';
+import { computeWordDiff } from '../../utils/textDiffUtils';
 
 // Cast ReactPlayer to any to suppress "url" prop type error
 const Player = ReactPlayer as any;
@@ -56,6 +57,37 @@ const getScoreColor = (score: number): string => {
     if (score >= 80) return '#4caf50';
     if (score >= 60) return '#ff9800';
     return '#f44336';
+};
+
+const HighlightedAnswer = ({ text, compareTo, isUserAnswer }: { text: string, compareTo: string, isUserAnswer: boolean }) => {
+    if (!text || !compareTo) return <>{text || 'No response recorded'}</>;
+    const diff = computeWordDiff(text, compareTo);
+    
+    return (
+        <React.Fragment>
+            {diff.map((t, i) => {
+                if (t.type === 'unchanged') return <span key={i}>{t.text} </span>;
+                
+                // If isUserAnswer, 'removed' means user said it but it's not in expected (extra/unmatched word) 
+                // If !isUserAnswer, 'removed' means expected has it but user missed it -> highlight red
+                const highlightColor = isUserAnswer 
+                    ? 'warning.light' 
+                    : 'error.light';
+                    
+                return (
+                    <Box component="span" key={i} sx={{ 
+                        bgcolor: highlightColor,
+                        color: 'text.primary',
+                        px: 0.5, py: 0.25, borderRadius: 1, mr: 0.5,
+                        display: 'inline-block',
+                        opacity: isUserAnswer ? 0.7 : 1 // Make user extra words less pronounced
+                    }} title={isUserAnswer ? "Extra/unmatched word" : "Missed keyword"}>
+                        {t.text}
+                    </Box>
+                );
+            })}
+        </React.Fragment>
+    );
 };
 
 // ============================================================
@@ -483,16 +515,16 @@ const InterviewReview: React.FC<InterviewReviewProps> = ({ interviewId }) => {
                                                 YOUR ANSWER:
                                             </Typography>
                                             <Typography variant="body2" sx={{ mb: 2, lineHeight: 1.7, bgcolor: 'info.50', p: 1.5, borderRadius: 1, border: '1px solid', borderColor: 'info.200' }}>
-                                                {qa.userAnswer || 'No response recorded'}
+                                                <HighlightedAnswer text={qa.userAnswer} compareTo={qa.idealAnswer || ''} isUserAnswer={true} />
                                             </Typography>
 
                                             {qa.idealAnswer && (
                                                 <>
                                                     <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
-                                                        SUGGESTED IDEAL ANSWER:
+                                                        EXPECTED ANSWER (Missing Keywords Highlighted):
                                                     </Typography>
                                                     <Typography variant="body2" sx={{ lineHeight: 1.7, bgcolor: 'success.50', p: 1.5, borderRadius: 1, border: '1px solid', borderColor: 'success.200' }}>
-                                                        {qa.idealAnswer}
+                                                        <HighlightedAnswer text={qa.idealAnswer} compareTo={qa.userAnswer} isUserAnswer={false} />
                                                     </Typography>
                                                 </>
                                             )}

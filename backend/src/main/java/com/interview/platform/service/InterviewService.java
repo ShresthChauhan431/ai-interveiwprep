@@ -231,8 +231,8 @@ public class InterviewService {
         int finalNumQuestions = (numQuestions != null && numQuestions > 0 && numQuestions <= 10) ? numQuestions : 5;
 
         // Hybrid mode: determine how many questions to pre-generate
-        int pregenCount = Math.min(interviewConfig.getPregenCount(), finalNumQuestions);
-        boolean hybridMode = interviewConfig.isHybridModeEnabled(finalNumQuestions);
+        int pregenCount = interviewConfig.getTotalPregenCount(finalNumQuestions);
+        boolean hybridMode = pregenCount < finalNumQuestions;
 
         log.info("Interview {} using {} mode: pregenCount={}, totalQuestions={}",
                 interview.getId(), hybridMode ? "HYBRID" : "FULL_PREGEN", pregenCount, finalNumQuestions);
@@ -241,6 +241,14 @@ public class InterviewService {
         interview.setTotalQuestions(finalNumQuestions);
         interview.setDifficulty(difficulty); // Store difficulty for dynamic question generation
         interviewRepository.save(interview);
+
+        // Determine exactly which question numbers are pre-generated
+        List<Integer> pregenNumbers = new ArrayList<>();
+        for (int i = 1; i <= finalNumQuestions; i++) {
+            if (!interviewConfig.isDynamicQuestion(i, finalNumQuestions)) {
+                pregenNumbers.add(i);
+            }
+        }
 
         // FIX: Wrap entire question generation + TTS in try-catch so errors are actionable
         List<Question> questions;
@@ -266,7 +274,8 @@ public class InterviewService {
         List<Long> questionIds = new ArrayList<>();
         for (int i = 0; i < questions.size(); i++) {
             Question question = questions.get(i);
-            question.setQuestionNumber(i + 1);
+            int actualQuestionNumber = i < pregenNumbers.size() ? pregenNumbers.get(i) : (i + 1);
+            question.setQuestionNumber(actualQuestionNumber);
             question.setInterview(interview);
             question.setGenerationMode("PRE_GENERATED"); // Mark as pre-generated (not dynamic)
             // FIX: Preserve category/difficulty from Ollama if set, otherwise default
@@ -1033,6 +1042,13 @@ public class InterviewService {
      * <p>In hybrid mode, questions in the PRE_GENERATED zone already exist
      * in the database. Questions in the DYNAMIC zone are generated on-demand
      * based on the interview history.</p>
+     *
+     * <h3>Hybrid Mode Behavior (totalQuestions > 5):</h3>
+     * <p>When the user answers the trigger question (Q3), this method detects
+     * that Q4 (the first dynamic question) doesn't exist yet. Instead of generating
+     * just Q4, it batch-generates ALL dynamic follow-up questions (Q4 and Q5) at once
+     * based on the user's Q3 answer. This ensures consistent follow-up questions
+     * that relate to each other.</p>
      */
     private Question findOrGenerateNextQuestion(
             Interview interview,
@@ -1051,8 +1067,77 @@ public class InterviewService {
             return existingQuestion.get();
         }
 
-        // Question doesn't exist — we're in the DYNAMIC zone, generate it
-        log.info("Generating dynamic question {} for interview {}", nextQuestionNumber, interviewId);
+        // Question doesn't exist — check if we need to batch-generate dynamic follow-ups
+        int triggerQuestion = interviewConfig.getDynamicTriggerQuestion(totalQuestions);
+        int dynamicCount = interviewConfig.getDynamicFollowupCount();
+        boolean isFirstDynamicQuestion = (currentQuestion.getQuestionNumber() == triggerQuestion)
+                && interviewConfig.isDynamicQuestion(nextQuestionNumber, totalQuestions);
+
+        if (isFirstDynamicQuestion && dynamicCount > 1) {
+            // This is the trigger point — batch-generate ALL dynamic follow-ups
+            log.info("Trigger point reached: generating {} dynamic follow-ups after Q{} for interview {}",
+                    dynamicCount, triggerQuestion, interviewId);
+
+            // Get the user's answer to the trigger question
+            Optional<Response> triggerResponse = responseRepository.findByQuestionId(currentQuestion.getId());
+            String triggerAnswer = triggerResponse.map(Response::getTranscription).orElse("");
+
+            // Build Q&A history
+            List<QuestionAnswerPair> qaHistory = buildQAHistory(interviewId);
+
+            // Generate ALL dynamic follow-up questions at once
+            List<Question> dynamicQuestions = ollamaService.generateDynamicFollowups(
+                    interview,
+                    currentQuestion,
+                    triggerAnswer,
+                    qaHistory,
+                    nextQuestionNumber,
+                    dynamicCount,
+                    totalQuestions);
+
+            // Save all dynamic questions with TTS
+            Question firstDynamicQuestion = null;
+            for (int i = 0; i < dynamicQuestions.size(); i++) {
+                Question dq = dynamicQuestions.get(i);
+                dq.setInterview(interview);
+                dq.setQuestionNumber(nextQuestionNumber + i);
+                dq.setGenerationMode("DYNAMIC");
+                dq.setGeneratedAfterQuestionId(currentQuestion.getId());
+
+                if (dq.getCategory() == null || dq.getCategory().isBlank()) {
+                    dq.setCategory("TECHNICAL");
+                }
+                if (dq.getDifficulty() == null || dq.getDifficulty().isBlank()) {
+                    dq.setDifficulty("MEDIUM");
+                }
+
+                dq = questionRepository.save(dq);
+
+                // Generate TTS audio
+                try {
+                    String audioS3Key = textToSpeechService.generateSpeech(dq.getQuestionText(), dq.getId());
+                    dq.setAudioUrl(audioS3Key);
+                    dq = questionRepository.save(dq);
+                    log.info("TTS audio generated for dynamic question Q{} (interview {})",
+                            dq.getQuestionNumber(), interviewId);
+                } catch (Exception e) {
+                    log.warn("TTS generation failed for dynamic Q{} — continuing without audio: {}",
+                            dq.getQuestionNumber(), e.getMessage());
+                }
+
+                if (i == 0) {
+                    firstDynamicQuestion = dq;
+                }
+            }
+
+            log.info("Batch-generated {} dynamic follow-ups (Q{}-Q{}) for interview {}",
+                    dynamicQuestions.size(), nextQuestionNumber, nextQuestionNumber + dynamicCount - 1, interviewId);
+
+            return firstDynamicQuestion;
+        }
+
+        // Single dynamic question generation (fallback for edge cases)
+        log.info("Generating single dynamic question {} for interview {}", nextQuestionNumber, interviewId);
 
         // Build Q&A history from all previous questions and answers
         List<QuestionAnswerPair> qaHistory = buildQAHistory(interviewId);
